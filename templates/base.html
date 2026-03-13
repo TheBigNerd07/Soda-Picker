@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Soda Picker{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+    <script defer src="{{ url_for('static', path='/app.js') }}"></script>
+  </head>
+  <body>
+    <div class="background-orb orb-one"></div>
+    <div class="background-orb orb-two"></div>
+    <div class="background-grid"></div>
+    <main class="shell">
+      <header class="site-header">
+        <a class="brand-mark" href="/">Soda Picker</a>
+        <nav class="site-nav">
+          <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+          <a href="/catalog" class="{% if request.url.path == '/catalog' %}active{% endif %}">Catalog</a>
+          <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">Settings</a>
+        </nav>
+      </header>
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

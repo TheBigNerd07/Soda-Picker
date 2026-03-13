@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Catalog | Soda Picker{% endblock %}
+{% block content %}
+  <section class="panel page-header">
+    <p class="eyebrow">Soda catalog</p>
+    <h1>Loaded from CSV</h1>
+    <p class="lede">
+      Only enabled rows are loaded. Bad rows are skipped and logged without crashing the app.
+    </p>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>{{ sodas|length }} sodas available</h2>
+        <p class="section-subtle">Source: <code>{{ settings.csv_path }}</code></p>
+      </div>
+      <a class="text-link" href="/">Back to dashboard</a>
+    </div>
+
+    {% if warnings %}
+      <div class="inline-warning">
+        <strong>CSV warnings:</strong>
+        <ul class="warning-list compact">
+          {% for warning in warnings %}
+            <li>{{ warning }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <div class="table-scroll">
+      <table class="catalog-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Brand</th>
+            <th>Caffeine</th>
+            <th>Sugar</th>
+            <th>Category</th>
+            <th>Diet</th>
+            <th>Caffeine-free</th>
+            <th>Priority</th>
+            <th>Tags</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for soda in sodas %}
+            <tr>
+              <td>{{ soda.name }}</td>
+              <td>{{ soda.brand or "—" }}</td>
+              <td>{{ soda.caffeine_mg|number }} mg</td>
+              <td>
+                {% if soda.sugar_g is not none %}
+                  {{ soda.sugar_g|number }} g
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td>{{ soda.category }}</td>
+              <td>{{ soda.is_diet|yes_no }}</td>
+              <td>{{ soda.is_caffeine_free|yes_no }}</td>
+              <td>{{ soda.priority }}</td>
+              <td>
+                {% if soda.tags %}
+                  {{ soda.tags|join(", ") }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | Soda Picker{% endblock %}
+{% block content %}
+  <section class="hero panel">
+    <div>
+      <p class="eyebrow">Local-first soda chaos</p>
+      <h1>Pick the right fizz for right now.</h1>
+      <p class="lede">
+        Soda Picker blends weighted randomness with time-of-day and caffeine rules,
+        so the result feels playful without ignoring your limits.
+      </p>
+      <div class="hero-actions">
+        <form action="/pick" method="post" class="picker-form">
+          <label class="toggle">
+            <input type="checkbox" name="chaos_mode" value="true" {% if chaos_mode %}checked{% endif %}>
+            <span>Treat mode</span>
+          </label>
+          <button type="submit" class="button">Pick my soda</button>
+        </form>
+        <p class="helper-text">
+          Treat mode loosens the weighting a bit, but it still respects the no-soda window and caffeine safety rules.
+        </p>
+      </div>
+    </div>
+    <div class="hero-stats">
+      <div class="stat-card spotlight">
+        <p class="stat-label">Current local time</p>
+        <p
+          id="clock"
+          class="stat-value clock"
+          data-iso="{{ local_now_iso }}"
+          data-timezone="{{ settings.timezone_name }}"
+        >
+          {{ local_now_label }}
+        </p>
+        <p class="stat-note">{{ settings.timezone_name }}</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Today's caffeine</p>
+        <p class="stat-value">{{ daily_total|number }} mg</p>
+        <p class="stat-note">Daily limit: {{ settings.daily_caffeine_limit_mg }} mg</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Catalog status</p>
+        <p class="stat-value">{{ loaded_sodas|length }}</p>
+        <p class="stat-note">enabled sodas loaded from CSV</p>
+      </div>
+    </div>
+  </section>
+
+  {% if flash_message %}
+    <div class="flash panel">
+      <strong>Saved.</strong> {{ flash_message }}
+    </div>
+  {% endif %}
+
+  <section class="dashboard-grid">
+    <div class="column-main">
+      <article class="panel recommendation-card status-{{ recommendation.status if recommendation else 'idle' }}">
+        {% if recommendation and recommendation.soda %}
+          <p class="eyebrow">Recommendation</p>
+          <h2>{{ recommendation.soda.name }}</h2>
+          <p class="brand-line">{{ recommendation.soda.brand or "House bubbles" }}</p>
+          <div class="badge-row">
+            {% for badge in recommendation.soda.badge_labels %}
+              <span class="badge">{{ badge }}</span>
+            {% endfor %}
+            {% for tag in recommendation.soda.tags[:3] %}
+              <span class="badge accent">{{ tag }}</span>
+            {% endfor %}
+          </div>
+          <div class="metric-row">
+            <div class="metric-pill">
+              <span>Caffeine</span>
+              <strong>{{ recommendation.soda.caffeine_mg|number }} mg</strong>
+            </div>
+            <div class="metric-pill">
+              <span>Sugar</span>
+              <strong>
+                {% if recommendation.soda.sugar_g is not none %}
+                  {{ recommendation.soda.sugar_g|number }} g
+                {% else %}
+                  n/a
+                {% endif %}
+              </strong>
+            </div>
+            <div class="metric-pill">
+              <span>Category</span>
+              <strong>{{ recommendation.soda.category }}</strong>
+            </div>
+          </div>
+          <p class="reason">{{ recommendation.reason }}</p>
+          <form action="/log-consumption" method="post" class="log-form">
+            <input type="hidden" name="soda_id" value="{{ recommendation.soda.id }}">
+            <input type="hidden" name="reason" value="{{ recommendation.reason }}">
+            {% if chaos_mode %}
+              <input type="hidden" name="chaos_mode" value="true">
+            {% endif %}
+            <button type="submit" class="button">Yep, I drank this</button>
+          </form>
+        {% elif recommendation %}
+          <p class="eyebrow">Recommendation</p>
+          <h2>{{ recommendation.headline }}</h2>
+          <p class="reason">{{ recommendation.reason }}</p>
+          <div class="empty-state">
+            <span class="badge warning">Hold the fizz</span>
+            <p>When the rules allow it, the picker will start serving options again.</p>
+          </div>
+        {% else %}
+          <p class="eyebrow">Recommendation</p>
+          <h2>Press the button for today’s pour.</h2>
+          <p class="reason">
+            I’ll look at the local time, your running caffeine total, and the soda catalog before making a pick.
+          </p>
+          <div class="empty-state">
+            <span class="badge accent">Surprise me</span>
+            <p>Weighted randomness keeps the app from feeling like a boring fixed checklist.</p>
+          </div>
+        {% endif %}
+      </article>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Today’s log</p>
+            <h3>What you’ve already had</h3>
+          </div>
+          <span class="section-meta">{{ history|length }} drinks today</span>
+        </div>
+        {% if history %}
+          <ul class="history-list">
+            {% for entry in history %}
+              <li class="history-item">
+                <div>
+                  <strong>{{ entry.display_name }}</strong>
+                  <p>{{ entry.caffeine_mg|number }} mg caffeine</p>
+                </div>
+                <div class="history-meta">
+                  <span>{{ entry.time_label }}</span>
+                  {% if entry.chaos_mode %}
+                    <span class="badge accent small">Treat mode</span>
+                  {% endif %}
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-copy">No sodas logged yet today.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <div class="column-side">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Rules snapshot</p>
+            <h3>Current live settings</h3>
+          </div>
+        </div>
+        <dl class="detail-list">
+          <div>
+            <dt>No soda before</dt>
+            <dd>{{ settings.no_soda_before_display }}</dd>
+          </div>
+          <div>
+            <dt>Caffeine cutoff</dt>
+            <dd>{{ settings.caffeine_cutoff_hour }}:00</dd>
+          </div>
+          <div>
+            <dt>Timezone</dt>
+            <dd>{{ settings.timezone_name }}</dd>
+          </div>
+          <div>
+            <dt>Treat mode default</dt>
+            <dd>{{ settings.chaos_mode_default|yes_no }}</dd>
+          </div>
+        </dl>
+        <a class="text-link" href="/settings">Open full settings</a>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Catalog health</p>
+            <h3>CSV load details</h3>
+          </div>
+        </div>
+        {% if catalog_warnings %}
+          <ul class="warning-list">
+            {% for warning in catalog_warnings %}
+              <li>{{ warning }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-copy">Catalog loaded cleanly from <code>{{ settings.csv_path }}</code>.</p>
+        {% endif %}
+        <a class="text-link" href="/catalog">Browse loaded sodas</a>
+      </section>
+    </div>
+  </section>
+{% endblock %}

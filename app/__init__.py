@@ -1,0 +1,1 @@
+"""Soda Picker application package."""

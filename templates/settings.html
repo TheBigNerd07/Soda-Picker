@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Settings | Soda Picker{% endblock %}
+{% block content %}
+  <section class="panel page-header">
+    <p class="eyebrow">Runtime configuration</p>
+    <h1>Environment-backed settings</h1>
+    <p class="lede">
+      These values come from environment variables. Edit <code>.env</code>, then restart the container to apply changes.
+    </p>
+  </section>
+
+  <section class="settings-grid">
+    <article class="panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Current values</p>
+          <h2>App configuration</h2>
+        </div>
+      </div>
+      <dl class="detail-list large">
+        {% for key, value in settings_items %}
+          <div>
+            <dt>{{ key }}</dt>
+            <dd>{{ value }}</dd>
+          </div>
+        {% endfor %}
+      </dl>
+    </article>
+
+    <article class="panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Behavior summary</p>
+          <h2>What the app is doing</h2>
+        </div>
+      </div>
+      <ul class="bullet-list">
+        <li>Before {{ settings.no_soda_before_display }}, the picker refuses to recommend any soda.</li>
+        <li>After {{ settings.caffeine_cutoff_hour }}:00, caffeinated sodas get heavily penalized.</li>
+        <li>Once the daily caffeine total reaches {{ settings.daily_caffeine_limit_mg }} mg, only caffeine-free sodas can be recommended.</li>
+        <li>The app watches the mounted CSV file and reloads it when it changes.</li>
+      </ul>
+    </article>
+  </section>
+{% endblock %}
