@@ -186,10 +186,12 @@ class Settings:
         self.weekend_no_soda_before_time = parse_hhmm(self.weekend_no_soda_before)
         self.reminder_time_value = parse_hhmm(self.reminder_time)
         if self.access_control_enabled:
-            if not self.access_control_username or not self.access_control_password:
-                raise ValueError("ACCESS_CONTROL_USERNAME and ACCESS_CONTROL_PASSWORD are required when access control is enabled.")
             if not self.access_control_secret:
                 raise ValueError("ACCESS_CONTROL_SECRET is required when access control is enabled.")
+            if bool(self.access_control_username) != bool(self.access_control_password):
+                raise ValueError(
+                    "Set both ACCESS_CONTROL_USERNAME and ACCESS_CONTROL_PASSWORD to bootstrap the first admin, or leave both blank."
+                )
         if self.basic_auth_enabled and self.access_control_enabled:
             raise ValueError("Choose either BASIC_AUTH_* or ACCESS_CONTROL_*; do not enable both.")
 

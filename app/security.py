@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import hmac
+import os
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
@@ -27,6 +29,30 @@ def credentials_valid(
         incoming_password,
         expected_password,
     )
+
+
+def hash_password(password: str, *, iterations: int = 240_000) -> str:
+    salt = os.urandom(16)
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${base64.urlsafe_b64encode(salt).decode('ascii')}${base64.urlsafe_b64encode(derived).decode('ascii')}"
+
+
+def password_matches(password: str, password_hash: str) -> bool:
+    if not password_hash:
+        return False
+
+    try:
+        algorithm, iterations_text, salt_text, digest_text = password_hash.split("$", maxsplit=3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        iterations = int(iterations_text)
+        salt = base64.urlsafe_b64decode(salt_text.encode("ascii"))
+        expected_digest = base64.urlsafe_b64decode(digest_text.encode("ascii"))
+    except Exception:
+        return False
+
+    actual_digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return hmac.compare_digest(actual_digest, expected_digest)
 
 
 def issue_auth_token(username: str, secret: str, *, lifetime_seconds: int) -> str:
@@ -208,7 +234,8 @@ class AccessControlMiddleware:
         login_path: str = "/login",
         cookie_name: str = AUTH_COOKIE_NAME,
         exempt_paths: set[str] | None = None,
-        always_protected_prefixes: tuple[str, ...] = ("/activity", "/settings", "/exports/"),
+        always_protected_prefixes: tuple[str, ...] = ("/activity", "/passport", "/wishlist", "/settings", "/exports/"),
+        identity_validator: Callable[[str], bool] | None = None,
     ) -> None:
         self.app = app
         self.mode = mode
@@ -217,6 +244,7 @@ class AccessControlMiddleware:
         self.cookie_name = cookie_name
         self.exempt_paths = exempt_paths or set()
         self.always_protected_prefixes = always_protected_prefixes
+        self.identity_validator = identity_validator
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or self.mode == "off":
@@ -229,6 +257,8 @@ class AccessControlMiddleware:
             return
 
         username = authenticated_username(scope, secret=self.secret, cookie_name=self.cookie_name)
+        if username is not None and self.identity_validator is not None and not self.identity_validator(username):
+            username = None
         if username is not None:
             scope["soda_picker_user"] = username
             await self.app(scope, receive, send)

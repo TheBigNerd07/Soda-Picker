@@ -35,7 +35,7 @@ The app now includes:
 - Database backup creation and backup file listing.
 - Runtime rule overrides saved in SQLite from the settings UI.
 - Optional browser reminder support plus a calendar reminder export.
-- Optional in-app login access control, basic auth, trusted-host filtering, and in-memory rate limiting.
+- Optional in-app login access control with multiple user accounts, per-user state, admin-managed accounts, basic auth, trusted-host filtering, and in-memory rate limiting.
 
 ## Project layout
 
@@ -170,19 +170,21 @@ Behavior:
 - `/activity`: full editable caffeine log plus recommendation history exports.
 - `/passport`: a long-term soda memory page for sodas you have tried from anywhere, with country/city notes, ratings, and CSV export.
 - `/wishlist`: a separate list of sodas you want to track down, restock, or revisit later.
-- `/settings`: persisted runtime rule overrides, environment-backed value display, exports, and backup controls.
+- `/settings`: per-user runtime rule overrides, environment-backed value display, exports, backup controls, and admin user management.
 - `/healthz`: container health endpoint.
 
 ## Security and proxy notes
 
-- `ACCESS_CONTROL_MODE=off|writes|all`: `writes` keeps the app readable but requires login for picks, edits, admin pages, and exports; `all` requires login for the whole app.
-- `ACCESS_CONTROL_USERNAME`, `ACCESS_CONTROL_PASSWORD`, `ACCESS_CONTROL_SECRET`: required when `ACCESS_CONTROL_MODE` is enabled.
+- `ACCESS_CONTROL_MODE=off|writes|all`: `writes` keeps the dashboard and catalog readable but requires login for personal pages, picks, edits, admin pages, and exports; `all` requires login for the whole app.
+- `ACCESS_CONTROL_SECRET`: required when `ACCESS_CONTROL_MODE` is enabled.
+- `ACCESS_CONTROL_USERNAME` and `ACCESS_CONTROL_PASSWORD`: optional bootstrap credentials for the first admin account. If the named account does not exist yet, Soda Picker creates it on startup.
 - `ACCESS_CONTROL_SESSION_DAYS`: cookie lifetime for the in-app login.
 - `BASIC_AUTH_USERNAME` and `BASIC_AUTH_PASSWORD`: if both are set, the app requires HTTP basic auth on all HTTP endpoints except `/healthz`.
 - Do not enable both `ACCESS_CONTROL_*` and `BASIC_AUTH_*` at the same time.
 - `TRUSTED_HOSTS`: optional comma-separated allowlist for Host header validation. Leave blank to disable.
 - `RATE_LIMIT_REQUESTS` and `RATE_LIMIT_WINDOW_SECONDS`: simple in-memory rate limiting.
 - TLS is still expected to terminate at Cloudflare Tunnel or another reverse proxy.
+- Once the first admin can sign in, additional accounts and admin role changes happen from the Settings page and are stored in SQLite.
 
 ## Reminder behavior
 

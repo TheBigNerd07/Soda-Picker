@@ -5,8 +5,8 @@
     <p class="eyebrow">Catalog control</p>
     <h1>Inventory, preferences, and CSV import.</h1>
     <p class="lede">
-      This page now does two jobs: it validates and replaces the CSV source of truth,
-      and it stores local-only state like stock, favorites, dislikes, temporary bans, and wishlist jumps.
+      Your stock flags, favorites, dislikes, and temporary bans now follow your account.
+      Replacing the shared CSV source of truth stays admin-only.
     </p>
   </section>
 
@@ -123,16 +123,22 @@
             <h2>Replace the catalog</h2>
           </div>
         </div>
-        <form action="/catalog/import" method="post" enctype="multipart/form-data" class="stack-form">
-          <label>
-            <span>Upload CSV</span>
-            <input type="file" name="upload" accept=".csv,text/csv" required>
-          </label>
-          <button type="submit" class="button">Validate and import</button>
-        </form>
-        <p class="helper-text">
-          Imports back up the current CSV first, then replace the mounted file if validation passes.
-        </p>
+        {% if is_admin %}
+          <form action="/catalog/import" method="post" enctype="multipart/form-data" class="stack-form">
+            <label>
+              <span>Upload CSV</span>
+              <input type="file" name="upload" accept=".csv,text/csv" required>
+            </label>
+            <button type="submit" class="button">Validate and import</button>
+          </form>
+          <p class="helper-text">
+            Imports back up the current CSV first, then replace the mounted file if validation passes.
+          </p>
+        {% else %}
+          <p class="helper-text">
+            Only admins can replace the shared catalog CSV. Your personal catalog controls still save below.
+          </p>
+        {% endif %}
       </section>
 
       <section class="panel">

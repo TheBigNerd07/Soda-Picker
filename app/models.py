@@ -212,6 +212,31 @@ class RecommendationHistoryEntry:
 
 
 @dataclass(frozen=True)
+class UserAccount:
+    id: int
+    username: str
+    is_admin: bool = False
+    created_at_utc: datetime | None = None
+    updated_at_utc: datetime | None = None
+
+    @property
+    def role_label(self) -> str:
+        return "Admin" if self.is_admin else "User"
+
+    @property
+    def created_label(self) -> str:
+        if self.created_at_utc is None:
+            return "Recently"
+        return f"{format_calendar_date(self.created_at_utc)} {format_clock_time(self.created_at_utc)}"
+
+
+@dataclass(frozen=True)
+class UserAuthRecord:
+    user: UserAccount
+    password_hash: str
+
+
+@dataclass(frozen=True)
 class PassportEntry:
     id: int
     soda_name: str

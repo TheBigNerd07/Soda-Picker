@@ -5,8 +5,8 @@
     <p class="eyebrow">Settings</p>
     <h1>Persisted runtime rules and admin controls.</h1>
     <p class="lede">
-      The fields below save lightweight runtime overrides in SQLite, while host, Docker,
-      auth, proxy, and file-path settings remain environment-backed.
+      These runtime overrides now save per account, while host, Docker, access-control bootstrap,
+      proxy, and file-path settings remain environment-backed.
     </p>
   </section>
 
@@ -119,7 +119,7 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">Exports and backups</p>
-            <h2>Protect the data directory</h2>
+            <h2>Protect your data</h2>
           </div>
         </div>
         <div class="action-grid">
@@ -127,15 +127,23 @@
           <a class="button tertiary" href="/exports/recommendations.csv">Recommendation CSV</a>
           <a class="button tertiary" href="/exports/passport.csv">Passport CSV</a>
           <a class="button tertiary" href="/exports/wishlist.csv">Wishlist CSV</a>
-          <a class="button tertiary" href="/exports/database.sqlite">Database backup download</a>
           <a class="button tertiary" href="/exports/catalog.csv">Current catalog CSV</a>
+          {% if is_admin %}
+            <a class="button tertiary" href="/exports/database.sqlite">Database backup download</a>
+          {% endif %}
         </div>
-        <form action="/backups/create" method="post" class="inline-form top-gap">
-          <button type="submit" class="button secondary">Create on-disk backup snapshot</button>
-        </form>
-        <p class="helper-text">
-          The snapshot action writes a database copy and the current CSV into <code>{{ settings.backup_dir }}</code>.
-        </p>
+        {% if is_admin %}
+          <form action="/backups/create" method="post" class="inline-form top-gap">
+            <button type="submit" class="button secondary">Create on-disk backup snapshot</button>
+          </form>
+          <p class="helper-text">
+            The snapshot action writes a database copy and the current CSV into <code>{{ settings.backup_dir }}</code>.
+          </p>
+        {% else %}
+          <p class="helper-text">
+            CSV exports follow your account. Full database backups stay admin-only because they include every user.
+          </p>
+        {% endif %}
       </section>
     </div>
 
@@ -153,8 +161,8 @@
             <dd>{{ access_control_mode_label }}</dd>
           </div>
           <div>
-            <dt>App login</dt>
-            <dd>{{ settings.access_control_username or "disabled" }}</dd>
+            <dt>Bootstrap admin</dt>
+            <dd>{{ settings.access_control_username or "managed in SQLite" }}</dd>
           </div>
           <div>
             <dt>Basic auth</dt>
@@ -162,7 +170,7 @@
           </div>
         </dl>
         <p class="helper-text top-gap">
-          Access control stays environment-backed on purpose. Set <code>ACCESS_CONTROL_MODE</code>, <code>ACCESS_CONTROL_USERNAME</code>, <code>ACCESS_CONTROL_PASSWORD</code>, and <code>ACCESS_CONTROL_SECRET</code> in your <code>.env</code>.
+          Access control mode and the session secret stay environment-backed. <code>ACCESS_CONTROL_USERNAME</code> and <code>ACCESS_CONTROL_PASSWORD</code> are only used to bootstrap the first admin if the database has no matching account yet.
         </p>
       </section>
 
@@ -193,4 +201,84 @@
       </section>
     </div>
   </section>
+
+  {% if is_admin %}
+    <section class="panel top-gap">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Admin only</p>
+          <h2>User accounts</h2>
+        </div>
+      </div>
+      <p class="helper-text">
+        {{ managed_user_count }} login account{{ "" if managed_user_count == 1 else "s" }} total, {{ managed_admin_count }} admin{{ "" if managed_admin_count == 1 else "s" }}.
+      </p>
+
+      {% if managed_users %}
+        <div class="settings-grid top-gap">
+          {% for managed_user in managed_users %}
+            <article class="panel">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">{{ managed_user.role_label }}</p>
+                  <h3>{{ managed_user.username }}</h3>
+                </div>
+              </div>
+              <p class="helper-text">Created {{ managed_user.created_label }}</p>
+              <form action="/admin/users/{{ managed_user.id }}/update" method="post" class="stack-form top-gap">
+                <input type="hidden" name="is_admin" value="false">
+                <label class="inline-check">
+                  <input type="checkbox" name="is_admin" value="true" {% if managed_user.is_admin %}checked{% endif %}>
+                  <span>Admin account</span>
+                </label>
+                <label>
+                  <span>New password</span>
+                  <input type="password" name="password" placeholder="Leave blank to keep the current password">
+                </label>
+                <div class="button-row">
+                  <button type="submit" class="button secondary">Save account</button>
+                </div>
+              </form>
+              {% if managed_user.username != auth_username %}
+                <form action="/admin/users/{{ managed_user.id }}/delete" method="post" class="inline-form top-gap delete-form">
+                  <button type="submit" class="button tertiary">Delete account</button>
+                </form>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-copy top-gap">No login accounts yet.</p>
+      {% endif %}
+
+      <article class="panel top-gap">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">New account</p>
+            <h3>Create another user</h3>
+          </div>
+        </div>
+        <form action="/admin/users/create" method="post" class="stack-form">
+          <div class="form-grid">
+            <label>
+              <span>Username</span>
+              <input type="text" name="username" autocomplete="off" required>
+            </label>
+            <label>
+              <span>Password</span>
+              <input type="password" name="password" autocomplete="new-password" required>
+            </label>
+          </div>
+          <input type="hidden" name="is_admin" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="is_admin" value="true">
+            <span>Create as admin</span>
+          </label>
+          <div class="button-row">
+            <button type="submit" class="button">Create account</button>
+          </div>
+        </form>
+      </article>
+    </section>
+  {% endif %}
 {% endblock %}

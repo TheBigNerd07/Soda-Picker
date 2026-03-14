@@ -9,18 +9,18 @@ class SettingsStore:
         self.base_settings = base_settings
         self.database = database
 
-    def current(self) -> Settings:
-        return self.base_settings.with_overrides(self.database.get_setting_overrides())
+    def current(self, user_id: int) -> Settings:
+        return self.base_settings.with_overrides(self.database.get_setting_overrides(user_id))
 
-    def override_keys(self) -> set[str]:
-        return set(self.database.get_setting_overrides().keys())
+    def override_keys(self, user_id: int) -> set[str]:
+        return set(self.database.get_setting_overrides(user_id).keys())
 
-    def save(self, form_data: dict[str, str]) -> Settings:
+    def save(self, user_id: int, form_data: dict[str, str]) -> Settings:
         normalized = normalize_override_payload(form_data)
         validated = self.base_settings.with_overrides(normalized)
-        self.database.set_setting_overrides(normalized)
+        self.database.set_setting_overrides(user_id, normalized)
         return validated
 
-    def reset(self) -> Settings:
-        self.database.clear_setting_overrides()
+    def reset(self, user_id: int) -> Settings:
+        self.database.clear_setting_overrides(user_id)
         return self.base_settings

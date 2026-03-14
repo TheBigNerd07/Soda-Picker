@@ -22,7 +22,10 @@ from .models import (
     BackupFile,
     CatalogItem,
     PREFERENCE_NEUTRAL,
+    PassportSummary,
     SodaState,
+    UserAccount,
+    WishlistSummary,
     format_calendar_date,
     format_clock_time,
 )
@@ -32,7 +35,6 @@ from .security import (
     AccessControlMiddleware,
     BasicAuthMiddleware,
     RateLimitMiddleware,
-    credentials_valid,
     issue_auth_token,
     read_auth_token,
 )
@@ -69,7 +71,7 @@ templates.env.filters["calendar_date"] = format_calendar_date
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    database.initialize()
+    database.initialize(base_settings)
     catalog.refresh(force=True)
     app.state.catalog = catalog
     app.state.database = database
@@ -97,6 +99,7 @@ if base_settings.access_control_enabled:
         mode=base_settings.access_control_mode,
         secret=base_settings.access_control_secret,
         exempt_paths={"/healthz", "/login", "/logout"},
+        identity_validator=database.user_exists,
     )
 
 if base_settings.basic_auth_enabled:
@@ -108,8 +111,10 @@ if base_settings.basic_auth_enabled:
     )
 
 
-def _current_settings() -> Settings:
-    return settings_store.current()
+def _current_settings(user: UserAccount | None = None) -> Settings:
+    if user is None:
+        return base_settings
+    return settings_store.current(user.id)
 
 
 def _redirect_with_flash(path: str, message: str) -> RedirectResponse:
@@ -176,9 +181,37 @@ def _parse_wishlist_status(raw_value: str | None) -> str:
     return "active"
 
 
-def _build_catalog_items(local_now: datetime) -> list[CatalogItem]:
+def _current_user(request: Request) -> UserAccount | None:
+    cached = request.scope.get("soda_picker_user_account")
+    if isinstance(cached, UserAccount):
+        return cached
+
+    if not base_settings.access_control_enabled:
+        user = database.get_local_user()
+        request.scope["soda_picker_user_account"] = user
+        request.scope["soda_picker_user"] = user.username
+        return user
+
+    username = _authenticated_username(request, base_settings)
+    if username is None:
+        return None
+
+    user = database.get_user_by_username(username)
+    if user is None:
+        return None
+
+    request.scope["soda_picker_user_account"] = user
+    return user
+
+
+def _settings_for_request(request: Request) -> tuple[Settings, UserAccount | None]:
+    user = _current_user(request)
+    return _current_settings(user), user
+
+
+def _build_catalog_items(local_now: datetime, *, user_id: int | None) -> list[CatalogItem]:
     sodas = catalog.list_sodas()
-    state_map = database.get_soda_state_map()
+    state_map = database.get_soda_state_map(user_id) if user_id is not None else {}
     items: list[CatalogItem] = []
     for soda in sodas:
         state = state_map.get(soda.id, SodaState(soda_id=soda.id, preference=PREFERENCE_NEUTRAL))
@@ -186,11 +219,14 @@ def _build_catalog_items(local_now: datetime) -> list[CatalogItem]:
     return items
 
 
-def _merged_recent_soda_ids(limit: int) -> list[str]:
+def _merged_recent_soda_ids(user_id: int | None, limit: int) -> list[str]:
+    if user_id is None:
+        return []
+
     ordered: list[str] = []
     for source in (
-        database.get_recent_consumed_catalog_ids(limit=limit),
-        database.get_recent_recommended_ids(limit=limit),
+        database.get_recent_consumed_catalog_ids(user_id, limit=limit),
+        database.get_recent_recommended_ids(user_id, limit=limit),
     ):
         for soda_id in source:
             if soda_id and soda_id not in ordered:
@@ -245,21 +281,22 @@ def _authenticated_username(request: Request, settings: Settings) -> str | None:
     return username
 
 
-def _build_auth_context(request: Request, *, settings: Settings) -> dict[str, Any]:
-    username = _authenticated_username(request, settings)
+def _build_auth_context(request: Request, *, settings: Settings, user: UserAccount | None) -> dict[str, Any]:
     current_path = request.url.path
     if request.url.query:
         current_path = f"{current_path}?{request.url.query}"
-    can_write = (not settings.access_control_enabled) or username is not None
-    write_locked = settings.access_control_mode == "writes" and not can_write
+    can_write = (not base_settings.access_control_enabled) or user is not None
+    write_locked = base_settings.access_control_mode == "writes" and not can_write
     return {
-        "auth_username": username,
-        "is_authenticated": username is not None,
+        "auth_username": user.username if user is not None else None,
+        "current_user": user,
+        "is_authenticated": user is not None,
+        "is_admin": user.is_admin if user is not None else False,
         "can_write": can_write,
         "write_locked": write_locked,
-        "access_control_enabled": settings.access_control_enabled,
-        "access_control_mode": settings.access_control_mode,
-        "access_control_mode_label": settings.access_control_mode_label,
+        "access_control_enabled": base_settings.access_control_enabled,
+        "access_control_mode": base_settings.access_control_mode,
+        "access_control_mode_label": base_settings.access_control_mode_label,
         "access_login_url": f"/login?{urlencode({'next': current_path})}",
     }
 
@@ -271,14 +308,39 @@ def _build_common_context(
     local_now: datetime,
     flash_message: str | None = None,
 ) -> dict[str, Any]:
+    user = _current_user(request)
+    user_id = user.id if user is not None else None
     rules = settings.effective_rules(local_now)
-    catalog_items = _build_catalog_items(local_now)
-    today_entries = database.get_today_entries(local_now)
-    daily_total = database.get_today_caffeine_total(local_now)
-    passport_entries = database.list_passport_entries(limit=8)
-    passport_summary = database.get_passport_summary()
-    wishlist_entries = database.list_wishlist_entries(limit=8, include_archived=False)
-    wishlist_summary = database.get_wishlist_summary()
+    catalog_items = _build_catalog_items(local_now, user_id=user_id)
+    if user_id is None:
+        today_entries = []
+        daily_total = 0.0
+        recent_recommendations = []
+        backup_files: list[BackupFile] = []
+        override_keys: set[str] = set()
+        passport_entries = []
+        passport_summary: PassportSummary | None = None
+        wishlist_entries = []
+        wishlist_summary: WishlistSummary | None = None
+    else:
+        today_entries = database.get_today_entries(user_id, local_now)
+        daily_total = database.get_today_caffeine_total(user_id, local_now)
+        recent_recommendations = database.get_recent_recommendations(user_id, limit=8)
+        backup_files = (
+            _build_backup_list(settings.backup_dir, local_timezone=settings.timezone)
+            if user.is_admin
+            else []
+        )
+        override_keys = settings_store.override_keys(user_id)
+        passport_entries = database.list_passport_entries(user_id, limit=8)
+        passport_summary = database.get_passport_summary(user_id)
+        wishlist_entries = database.list_wishlist_entries(user_id, limit=8, include_archived=False)
+        wishlist_summary = database.get_wishlist_summary(user_id)
+
+    if passport_summary is None:
+        passport_summary = PassportSummary()
+        wishlist_summary = WishlistSummary()
+
     context = {
         "request": request,
         "settings": settings,
@@ -291,15 +353,15 @@ def _build_common_context(
         "catalog_diagnostics": catalog.diagnostics,
         "today_entries": today_entries,
         "daily_total": daily_total,
-        "recent_recommendations": database.get_recent_recommendations(limit=8),
-        "backup_files": _build_backup_list(settings.backup_dir, local_timezone=settings.timezone),
-        "override_keys": settings_store.override_keys(),
+        "recent_recommendations": recent_recommendations,
+        "backup_files": backup_files,
+        "override_keys": override_keys,
         "passport_summary": passport_summary,
         "recent_passport_entries": passport_entries,
         "wishlist_summary": wishlist_summary,
         "recent_wishlist_entries": wishlist_entries,
     }
-    context.update(_build_auth_context(request, settings=settings))
+    context.update(_build_auth_context(request, settings=settings, user=user))
     return context
 
 
@@ -335,7 +397,7 @@ def _dashboard_context(
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request) -> HTMLResponse:
-    settings = _current_settings()
+    settings, _ = _settings_for_request(request)
     local_now = settings.local_now()
     context = _dashboard_context(
         request,
@@ -348,27 +410,28 @@ async def dashboard(request: Request) -> HTMLResponse:
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> HTMLResponse:
-    settings = _current_settings()
-    if not settings.access_control_enabled:
+    if not base_settings.access_control_enabled:
         return _redirect_with_flash("/", "Access control is not enabled.")
 
-    if _authenticated_username(request, settings):
+    if _current_user(request) is not None:
         next_path = _safe_next_path(request.query_params.get("next"))
         return RedirectResponse(url=next_path, status_code=303)
 
     context = {
         "request": request,
-        "settings": settings,
+        "settings": base_settings,
         "flash_message": _parse_flash(request),
         "login_error": None,
         "next_path": _safe_next_path(request.query_params.get("next")),
         "write_locked": False,
         "can_write": True,
-        "access_control_enabled": settings.access_control_enabled,
-        "access_control_mode": settings.access_control_mode,
-        "access_control_mode_label": settings.access_control_mode_label,
+        "access_control_enabled": base_settings.access_control_enabled,
+        "access_control_mode": base_settings.access_control_mode,
+        "access_control_mode_label": base_settings.access_control_mode_label,
         "auth_username": None,
+        "current_user": None,
         "is_authenticated": False,
+        "is_admin": False,
         "access_login_url": "/login",
     }
     return templates.TemplateResponse("login.html", context)
@@ -376,47 +439,44 @@ async def login_page(request: Request) -> HTMLResponse:
 
 @app.post("/login", response_class=HTMLResponse)
 async def login_submit(request: Request) -> Response:
-    settings = _current_settings()
-    if not settings.access_control_enabled:
+    if not base_settings.access_control_enabled:
         return _redirect_with_flash("/", "Access control is not enabled.")
 
     form = await request.form()
     next_path = _safe_next_path(str(form.get("next", "/")))
     username = str(form.get("username", "")).strip()
     password = str(form.get("password", ""))
-    if not credentials_valid(
-        username,
-        password,
-        expected_username=settings.access_control_username,
-        expected_password=settings.access_control_password,
-    ):
+    user = database.authenticate_user(username, password)
+    if user is None:
         context = {
             "request": request,
-            "settings": settings,
+            "settings": base_settings,
             "flash_message": None,
             "login_error": "That username or password did not match.",
             "next_path": next_path,
             "write_locked": False,
             "can_write": True,
-            "access_control_enabled": settings.access_control_enabled,
-            "access_control_mode": settings.access_control_mode,
-            "access_control_mode_label": settings.access_control_mode_label,
+            "access_control_enabled": base_settings.access_control_enabled,
+            "access_control_mode": base_settings.access_control_mode,
+            "access_control_mode_label": base_settings.access_control_mode_label,
             "auth_username": None,
+            "current_user": None,
             "is_authenticated": False,
+            "is_admin": False,
             "access_login_url": "/login",
         }
         return templates.TemplateResponse("login.html", context, status_code=401)
 
     token = issue_auth_token(
-        settings.access_control_username,
-        settings.access_control_secret,
-        lifetime_seconds=settings.access_control_session_days * 86400,
+        user.username,
+        base_settings.access_control_secret,
+        lifetime_seconds=base_settings.access_control_session_days * 86400,
     )
     response = RedirectResponse(url=next_path, status_code=303)
     response.set_cookie(
         AUTH_COOKIE_NAME,
         token,
-        max_age=settings.access_control_session_days * 86400,
+        max_age=base_settings.access_control_session_days * 86400,
         httponly=True,
         samesite="lax",
     )
@@ -432,25 +492,48 @@ async def logout() -> RedirectResponse:
 
 @app.post("/pick", response_class=HTMLResponse)
 async def pick_soda(request: Request) -> HTMLResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "settings": base_settings,
+                "flash_message": None,
+                "login_error": "Sign in to generate recommendations.",
+                "next_path": "/",
+                "write_locked": False,
+                "can_write": True,
+                "access_control_enabled": base_settings.access_control_enabled,
+                "access_control_mode": base_settings.access_control_mode,
+                "access_control_mode_label": base_settings.access_control_mode_label,
+                "auth_username": None,
+                "current_user": None,
+                "is_authenticated": False,
+                "is_admin": False,
+                "access_login_url": "/login",
+            },
+            status_code=401,
+        )
+
     form = await request.form()
-    settings = _current_settings()
     local_now = settings.local_now()
     rules = settings.effective_rules(local_now)
     chaos_mode = parse_bool(form.get("chaos_mode"), settings.chaos_mode_default)
-    catalog_items = _build_catalog_items(local_now)
-    today_entries = database.get_today_entries(local_now)
-    daily_total = database.get_today_caffeine_total(local_now)
+    catalog_items = _build_catalog_items(local_now, user_id=user.id)
+    today_entries = database.get_today_entries(user.id, local_now)
+    daily_total = database.get_today_caffeine_total(user.id, local_now)
 
     recommendation = engine.recommend(
         rules=rules,
         catalog_items=catalog_items,
         daily_caffeine_total=daily_total,
-        recent_soda_ids=_merged_recent_soda_ids(rules.duplicate_lookback),
+        recent_soda_ids=_merged_recent_soda_ids(user.id, rules.duplicate_lookback),
         today_entries=today_entries,
         local_now=local_now,
         chaos_mode=chaos_mode,
     )
-    recommendation_id = database.log_recommendation(recommendation, local_now)
+    recommendation_id = database.log_recommendation(user.id, recommendation, local_now)
     context = _dashboard_context(
         request,
         settings=settings,
@@ -464,8 +547,11 @@ async def pick_soda(request: Request) -> HTMLResponse:
 
 @app.post("/log-consumption")
 async def log_consumption(request: Request) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to log drinks.")
+
     form = await request.form()
-    settings = _current_settings()
     soda_id = str(form.get("soda_id", "")).strip()
     soda = catalog.get_by_id(soda_id)
     if soda is None:
@@ -475,6 +561,7 @@ async def log_consumption(request: Request) -> RedirectResponse:
     recommendation_value = int(recommendation_id) if recommendation_id else None
     local_now = settings.local_now()
     database.log_catalog_consumption(
+        user.id,
         soda,
         local_now,
         reason=str(form.get("reason", "")).strip(),
@@ -487,14 +574,18 @@ async def log_consumption(request: Request) -> RedirectResponse:
 
 @app.post("/manual-entry")
 async def log_manual_entry(request: Request) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to log caffeine.")
+
     form = await request.form()
-    settings = _current_settings()
     local_now = _parse_local_datetime(str(form.get("consumed_at_local", "")), settings, settings.local_now())
     name = str(form.get("name", "")).strip()
     if not name:
         return _redirect_with_flash("/activity", "Manual entry needs a name.")
     caffeine_mg = float(str(form.get("caffeine_mg", "0")).strip() or 0)
     database.log_manual_entry(
+        user.id,
         name=name,
         caffeine_mg=caffeine_mg,
         local_now=local_now,
@@ -505,7 +596,7 @@ async def log_manual_entry(request: Request) -> RedirectResponse:
 
 @app.get("/activity", response_class=HTMLResponse)
 async def activity_page(request: Request) -> HTMLResponse:
-    settings = _current_settings()
+    settings, user = _settings_for_request(request)
     local_now = settings.local_now()
     context = _build_common_context(
         request,
@@ -515,7 +606,7 @@ async def activity_page(request: Request) -> HTMLResponse:
     )
     context.update(
         {
-            "all_entries": database.get_recent_entries(limit=60),
+            "all_entries": database.get_recent_entries(user.id, limit=60) if user is not None else [],
             "manual_entry_time": local_now.strftime("%Y-%m-%dT%H:%M"),
         }
     )
@@ -524,7 +615,7 @@ async def activity_page(request: Request) -> HTMLResponse:
 
 @app.get("/wishlist", response_class=HTMLResponse)
 async def wishlist_page(request: Request) -> HTMLResponse:
-    settings = _current_settings()
+    settings, user = _settings_for_request(request)
     local_now = settings.local_now()
     context = _build_common_context(
         request,
@@ -532,19 +623,23 @@ async def wishlist_page(request: Request) -> HTMLResponse:
         local_now=local_now,
         flash_message=_parse_flash(request),
     )
-    context["wishlist_entries"] = database.list_wishlist_entries(limit=300)
+    context["wishlist_entries"] = database.list_wishlist_entries(user.id, limit=300) if user is not None else []
     return templates.TemplateResponse("wishlist.html", context)
 
 
 @app.post("/wishlist/add")
 async def add_wishlist_entry(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save wishlist entries.")
+
     form = await request.form()
     soda_name = str(form.get("soda_name", "")).strip()
     brand = str(form.get("brand", "")).strip()
     if not soda_name:
         return _redirect_with_flash("/wishlist", "Wishlist entries need a soda name.")
 
-    existing = database.find_active_wishlist_entry(soda_name=soda_name, brand=brand)
+    existing = database.find_active_wishlist_entry(user.id, soda_name=soda_name, brand=brand)
     if existing is not None:
         return _redirect_with_flash("/wishlist", f"{existing.display_name} is already on the active wishlist.")
 
@@ -554,6 +649,7 @@ async def add_wishlist_entry(request: Request) -> RedirectResponse:
         return _redirect_with_flash("/wishlist", str(exc))
 
     database.add_wishlist_entry(
+        user.id,
         soda_name=soda_name,
         brand=brand,
         country=str(form.get("country", "")).strip(),
@@ -569,17 +665,22 @@ async def add_wishlist_entry(request: Request) -> RedirectResponse:
 
 @app.post("/wishlist/from-catalog")
 async def add_wishlist_from_catalog(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save wishlist entries.")
+
     form = await request.form()
     soda_id = str(form.get("soda_id", "")).strip()
     soda = catalog.get_by_id(soda_id)
     if soda is None:
         return _redirect_with_flash("/catalog", "That soda is no longer in the catalog.")
 
-    existing = database.find_active_wishlist_entry(soda_name=soda.name, brand=soda.brand)
+    existing = database.find_active_wishlist_entry(user.id, soda_name=soda.name, brand=soda.brand)
     if existing is not None:
         return _redirect_with_flash("/catalog", f"{existing.display_name} is already on the active wishlist.")
 
     database.add_wishlist_entry(
+        user.id,
         soda_name=soda.name,
         brand=soda.brand,
         country="",
@@ -595,13 +696,18 @@ async def add_wishlist_from_catalog(request: Request) -> RedirectResponse:
 
 @app.post("/wishlist/from-passport")
 async def add_wishlist_from_passport(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save wishlist entries.")
+
     form = await request.form()
     entry_id = int(str(form.get("entry_id", "0")).strip() or 0)
-    passport_entry = database.get_passport_entry(entry_id)
+    passport_entry = database.get_passport_entry(user.id, entry_id)
     if passport_entry is None:
         return _redirect_with_flash("/passport", "That passport entry no longer exists.")
 
     existing = database.find_active_wishlist_entry(
+        user.id,
         soda_name=passport_entry.soda_name,
         brand=passport_entry.brand,
     )
@@ -609,6 +715,7 @@ async def add_wishlist_from_passport(request: Request) -> RedirectResponse:
         return _redirect_with_flash("/passport", f"{existing.display_name} is already on the active wishlist.")
 
     database.add_wishlist_entry(
+        user.id,
         soda_name=passport_entry.soda_name,
         brand=passport_entry.brand,
         country=passport_entry.country,
@@ -624,6 +731,10 @@ async def add_wishlist_from_passport(request: Request) -> RedirectResponse:
 
 @app.post("/wishlist/{entry_id}/update")
 async def update_wishlist_entry(request: Request, entry_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to update wishlist entries.")
+
     form = await request.form()
     soda_name = str(form.get("soda_name", "")).strip()
     if not soda_name:
@@ -635,6 +746,7 @@ async def update_wishlist_entry(request: Request, entry_id: int) -> RedirectResp
         return _redirect_with_flash("/wishlist", str(exc))
 
     success = database.update_wishlist_entry(
+        user.id,
         entry_id,
         soda_name=soda_name,
         brand=str(form.get("brand", "")).strip(),
@@ -650,15 +762,19 @@ async def update_wishlist_entry(request: Request, entry_id: int) -> RedirectResp
 
 
 @app.post("/wishlist/{entry_id}/delete")
-async def delete_wishlist_entry(entry_id: int) -> RedirectResponse:
-    if not database.delete_wishlist_entry(entry_id):
+async def delete_wishlist_entry(request: Request, entry_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to delete wishlist entries.")
+
+    if not database.delete_wishlist_entry(user.id, entry_id):
         return _redirect_with_flash("/wishlist", "That wishlist entry no longer exists.")
     return _redirect_with_flash("/wishlist", "Deleted the wishlist entry.")
 
 
 @app.get("/passport", response_class=HTMLResponse)
 async def passport_page(request: Request) -> HTMLResponse:
-    settings = _current_settings()
+    settings, user = _settings_for_request(request)
     local_now = settings.local_now()
     context = _build_common_context(
         request,
@@ -668,7 +784,7 @@ async def passport_page(request: Request) -> HTMLResponse:
     )
     context.update(
         {
-            "passport_entries": database.list_passport_entries(limit=300),
+            "passport_entries": database.list_passport_entries(user.id, limit=300) if user is not None else [],
             "passport_entry_date": local_now.date().isoformat(),
         }
     )
@@ -677,8 +793,11 @@ async def passport_page(request: Request) -> HTMLResponse:
 
 @app.post("/passport/add")
 async def add_passport_entry(request: Request) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save passport entries.")
+
     form = await request.form()
-    settings = _current_settings()
     soda_name = str(form.get("soda_name", "")).strip()
     if not soda_name:
         return _redirect_with_flash("/passport", "Passport entry needs a soda name.")
@@ -690,6 +809,7 @@ async def add_passport_entry(request: Request) -> RedirectResponse:
         return _redirect_with_flash("/passport", str(exc))
 
     database.add_passport_entry(
+        user.id,
         soda_name=soda_name,
         brand=str(form.get("brand", "")).strip(),
         country=str(form.get("country", "")).strip(),
@@ -707,6 +827,10 @@ async def add_passport_entry(request: Request) -> RedirectResponse:
 
 @app.post("/passport/{entry_id}/update")
 async def update_passport_entry(request: Request, entry_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to update passport entries.")
+
     form = await request.form()
     soda_name = str(form.get("soda_name", "")).strip()
     if not soda_name:
@@ -722,6 +846,7 @@ async def update_passport_entry(request: Request, entry_id: int) -> RedirectResp
         return _redirect_with_flash("/passport", str(exc))
 
     success = database.update_passport_entry(
+        user.id,
         entry_id,
         soda_name=soda_name,
         brand=str(form.get("brand", "")).strip(),
@@ -741,18 +866,26 @@ async def update_passport_entry(request: Request, entry_id: int) -> RedirectResp
 
 
 @app.post("/passport/{entry_id}/delete")
-async def delete_passport_entry(entry_id: int) -> RedirectResponse:
-    if not database.delete_passport_entry(entry_id):
+async def delete_passport_entry(request: Request, entry_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to delete passport entries.")
+
+    if not database.delete_passport_entry(user.id, entry_id):
         return _redirect_with_flash("/passport", "That passport entry no longer exists.")
     return _redirect_with_flash("/passport", "Deleted the soda passport entry.")
 
 
 @app.post("/activity/{entry_id}/update")
 async def update_entry(request: Request, entry_id: int) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to edit activity.")
+
     form = await request.form()
-    settings = _current_settings()
     local_now = _parse_local_datetime(str(form.get("consumed_at_local", "")), settings, settings.local_now())
     success = database.update_entry(
+        user.id,
         entry_id,
         soda_name=str(form.get("soda_name", "")).strip(),
         brand=str(form.get("brand", "")).strip(),
@@ -767,15 +900,19 @@ async def update_entry(request: Request, entry_id: int) -> RedirectResponse:
 
 
 @app.post("/activity/{entry_id}/delete")
-async def delete_entry(entry_id: int) -> RedirectResponse:
-    if not database.delete_entry(entry_id):
+async def delete_entry(request: Request, entry_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to edit activity.")
+
+    if not database.delete_entry(user.id, entry_id):
         return _redirect_with_flash("/activity", "That log entry no longer exists.")
     return _redirect_with_flash("/activity", "Deleted the log entry.")
 
 
 @app.get("/catalog", response_class=HTMLResponse)
 async def catalog_page(request: Request) -> HTMLResponse:
-    settings = _current_settings()
+    settings, _ = _settings_for_request(request)
     local_now = settings.local_now()
     context = _build_common_context(
         request,
@@ -788,12 +925,17 @@ async def catalog_page(request: Request) -> HTMLResponse:
 
 @app.post("/catalog/state")
 async def save_catalog_state(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save catalog controls.")
+
     form = await request.form()
     soda_id = str(form.get("soda_id", "")).strip()
     if not soda_id:
         return _redirect_with_flash("/catalog", "Missing soda ID.")
 
     database.save_soda_state(
+        user.id,
         soda_id=soda_id,
         is_available=parse_bool(form.get("is_available"), False),
         preference=str(form.get("preference", "neutral")).strip() or "neutral",
@@ -804,7 +946,48 @@ async def save_catalog_state(request: Request) -> RedirectResponse:
 
 @app.post("/catalog/import", response_class=HTMLResponse)
 async def import_catalog(request: Request) -> HTMLResponse:
-    settings = _current_settings()
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request,
+                "settings": base_settings,
+                "flash_message": None,
+                "login_error": "Sign in as an admin to import a catalog.",
+                "next_path": "/catalog",
+                "write_locked": False,
+                "can_write": True,
+                "access_control_enabled": base_settings.access_control_enabled,
+                "access_control_mode": base_settings.access_control_mode,
+                "access_control_mode_label": base_settings.access_control_mode_label,
+                "auth_username": None,
+                "current_user": None,
+                "is_authenticated": False,
+                "is_admin": False,
+                "access_login_url": "/login",
+            },
+            status_code=401,
+        )
+    if not user.is_admin:
+        return templates.TemplateResponse(
+            "catalog.html",
+            {
+                **_build_common_context(
+                    request,
+                    settings=settings,
+                    local_now=settings.local_now(),
+                    flash_message="Catalog import is reserved for admins.",
+                ),
+                "import_feedback": {
+                    "status": "error",
+                    "title": "Admin access required",
+                    "details": ["Only admins can replace the shared catalog CSV."],
+                },
+            },
+            status_code=403,
+        )
+
     local_now = settings.local_now()
     form = await request.form()
     upload = form.get("upload")
@@ -883,7 +1066,7 @@ async def import_catalog(request: Request) -> HTMLResponse:
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request) -> HTMLResponse:
-    settings = _current_settings()
+    settings, user = _settings_for_request(request)
     local_now = settings.local_now()
     context = _build_common_context(
         request,
@@ -891,15 +1074,23 @@ async def settings_page(request: Request) -> HTMLResponse:
         local_now=local_now,
         flash_message=_parse_flash(request),
     )
-    context["settings_items"] = settings.display_items(settings_store.override_keys())
+    override_keys = settings_store.override_keys(user.id) if user is not None else set()
+    context["settings_items"] = settings.display_items(override_keys)
+    context["managed_users"] = database.list_users() if user is not None and user.is_admin else []
+    context["managed_user_count"] = database.count_users()
+    context["managed_admin_count"] = database.count_admin_users()
     return templates.TemplateResponse("settings.html", context)
 
 
 @app.post("/settings/save")
 async def save_settings(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save settings.")
+
     form = await request.form()
     try:
-        settings_store.save({key: str(value) for key, value in form.items()})
+        settings_store.save(user.id, {key: str(value) for key, value in form.items()})
     except ValueError as exc:
         LOGGER.warning("Invalid settings override: %s", exc)
         return _redirect_with_flash("/settings", f"Could not save settings: {exc}")
@@ -907,14 +1098,23 @@ async def save_settings(request: Request) -> RedirectResponse:
 
 
 @app.post("/settings/reset")
-async def reset_settings() -> RedirectResponse:
-    settings_store.reset()
+async def reset_settings(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to reset settings.")
+
+    settings_store.reset(user.id)
     return _redirect_with_flash("/settings", "Cleared saved runtime overrides.")
 
 
 @app.post("/backups/create")
-async def create_backup() -> RedirectResponse:
-    settings = _current_settings()
+async def create_backup(request: Request) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in as an admin to create backups.")
+    if not user.is_admin:
+        return _redirect_with_flash("/settings", "Only admins can create full backups.")
+
     backup_path = database.create_database_backup(settings.backup_dir)
     catalog_backup = _backup_catalog_file(settings)
     message = f"Created database backup {backup_path.name}."
@@ -923,9 +1123,73 @@ async def create_backup() -> RedirectResponse:
     return _redirect_with_flash("/settings", message)
 
 
+@app.post("/admin/users/create")
+async def create_user_account(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in as an admin to create accounts.")
+    if not user.is_admin:
+        return _redirect_with_flash("/settings", "Only admins can manage user accounts.")
+
+    form = await request.form()
+    try:
+        created = database.create_user(
+            username=str(form.get("username", "")).strip(),
+            password=str(form.get("password", "")),
+            is_admin=parse_bool(form.get("is_admin"), False),
+        )
+    except ValueError as exc:
+        return _redirect_with_flash("/settings", str(exc))
+    return _redirect_with_flash("/settings", f"Created account {created.username}.")
+
+
+@app.post("/admin/users/{user_id}/update")
+async def update_user_account(request: Request, user_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in as an admin to manage accounts.")
+    if not user.is_admin:
+        return _redirect_with_flash("/settings", "Only admins can manage user accounts.")
+
+    form = await request.form()
+    password = str(form.get("password", ""))
+    try:
+        updated = database.update_user(
+            user_id,
+            password=password if password.strip() else None,
+            is_admin=parse_bool(form.get("is_admin"), False),
+        )
+    except ValueError as exc:
+        return _redirect_with_flash("/settings", str(exc))
+    if updated is None:
+        return _redirect_with_flash("/settings", "That user account no longer exists.")
+    return _redirect_with_flash("/settings", f"Updated account {updated.username}.")
+
+
+@app.post("/admin/users/{user_id}/delete")
+async def delete_user_account(request: Request, user_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in as an admin to manage accounts.")
+    if not user.is_admin:
+        return _redirect_with_flash("/settings", "Only admins can manage user accounts.")
+
+    try:
+        deleted = database.delete_user(user_id, acting_user_id=user.id)
+    except ValueError as exc:
+        return _redirect_with_flash("/settings", str(exc))
+    if not deleted:
+        return _redirect_with_flash("/settings", "That user account no longer exists.")
+    return _redirect_with_flash("/settings", "Deleted the user account.")
+
+
 @app.get("/exports/consumption.csv")
-async def export_consumption_csv() -> Response:
-    payload = database.export_consumption_csv()
+async def export_consumption_csv(request: Request) -> Response:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return Response("Authentication required.", status_code=401)
+
+    payload = database.export_consumption_csv(user.id)
     return Response(
         content=payload,
         media_type="text/csv",
@@ -934,8 +1198,12 @@ async def export_consumption_csv() -> Response:
 
 
 @app.get("/exports/recommendations.csv")
-async def export_recommendations_csv() -> Response:
-    payload = database.export_recommendation_csv()
+async def export_recommendations_csv(request: Request) -> Response:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return Response("Authentication required.", status_code=401)
+
+    payload = database.export_recommendation_csv(user.id)
     return Response(
         content=payload,
         media_type="text/csv",
@@ -944,8 +1212,12 @@ async def export_recommendations_csv() -> Response:
 
 
 @app.get("/exports/passport.csv")
-async def export_passport_csv() -> Response:
-    payload = database.export_passport_csv()
+async def export_passport_csv(request: Request) -> Response:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return Response("Authentication required.", status_code=401)
+
+    payload = database.export_passport_csv(user.id)
     return Response(
         content=payload,
         media_type="text/csv",
@@ -954,8 +1226,12 @@ async def export_passport_csv() -> Response:
 
 
 @app.get("/exports/wishlist.csv")
-async def export_wishlist_csv() -> Response:
-    payload = database.export_wishlist_csv()
+async def export_wishlist_csv(request: Request) -> Response:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return Response("Authentication required.", status_code=401)
+
+    payload = database.export_wishlist_csv(user.id)
     return Response(
         content=payload,
         media_type="text/csv",
@@ -970,8 +1246,13 @@ async def export_catalog_csv() -> FileResponse:
 
 
 @app.get("/exports/database.sqlite")
-async def export_database_backup() -> FileResponse:
-    settings = _current_settings()
+async def export_database_backup(request: Request) -> Response:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return Response("Authentication required.", status_code=401)
+    if not user.is_admin:
+        return Response("Admin access required.", status_code=403)
+
     backup_path = database.create_database_backup(settings.backup_dir)
     return FileResponse(
         backup_path,
@@ -981,8 +1262,11 @@ async def export_database_backup() -> FileResponse:
 
 
 @app.get("/exports/reminder.ics")
-async def export_reminder_calendar() -> Response:
-    settings = _current_settings()
+async def export_reminder_calendar(request: Request) -> Response:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return Response("Authentication required.", status_code=401)
+
     local_now = settings.local_now()
     rules = settings.effective_rules(local_now)
     start_at = datetime.combine(local_now.date(), rules.reminder_time, tzinfo=settings.timezone)
@@ -1016,17 +1300,17 @@ async def export_reminder_calendar() -> Response:
 
 @app.get("/healthz", response_class=JSONResponse)
 async def healthz() -> JSONResponse:
-    settings = _current_settings()
-    local_now = settings.local_now()
+    local_now = base_settings.local_now()
     payload = {
         "status": "ok",
         "local_time": local_now.isoformat(),
-        "timezone": settings.timezone_name,
+        "timezone": base_settings.timezone_name,
         "sodas_loaded": len(catalog.list_sodas()),
-        "csv_path": settings.csv_path,
-        "database_path": settings.database_path,
-        "override_count": len(settings_store.override_keys()),
-        "access_control_mode": settings.access_control_mode,
+        "csv_path": base_settings.csv_path,
+        "database_path": base_settings.database_path,
+        "user_count": database.count_users(),
+        "admin_user_count": database.count_admin_users(),
+        "access_control_mode": base_settings.access_control_mode,
     }
     return JSONResponse(payload)
 

@@ -270,7 +270,11 @@
             {% endfor %}
           </ul>
         {% else %}
-          <p class="empty-copy">No caffeine logged yet today.</p>
+          {% if access_control_enabled and not current_user %}
+            <p class="empty-copy">Log in to see your caffeine log.</p>
+          {% else %}
+            <p class="empty-copy">No caffeine logged yet today.</p>
+          {% endif %}
         {% endif %}
       </section>
 
@@ -302,7 +306,11 @@
             {% endfor %}
           </ul>
         {% else %}
-          <p class="empty-copy">No recommendation history yet.</p>
+          {% if access_control_enabled and not current_user %}
+            <p class="empty-copy">Log in to load your recommendation history.</p>
+          {% else %}
+            <p class="empty-copy">No recommendation history yet.</p>
+          {% endif %}
         {% endif %}
       </section>
     </div>
@@ -423,7 +431,11 @@
             {% endfor %}
           </ul>
         {% else %}
-          <p class="empty-copy">No world sodas tracked yet.</p>
+          {% if access_control_enabled and not current_user %}
+            <p class="empty-copy">Log in to load your soda passport.</p>
+          {% else %}
+            <p class="empty-copy">No world sodas tracked yet.</p>
+          {% endif %}
         {% endif %}
       </section>
 
@@ -456,7 +468,11 @@
             {% endfor %}
           </ul>
         {% else %}
-          <p class="empty-copy">No wishlist entries yet.</p>
+          {% if access_control_enabled and not current_user %}
+            <p class="empty-copy">Log in to load your wishlist.</p>
+          {% else %}
+            <p class="empty-copy">No wishlist entries yet.</p>
+          {% endif %}
         {% endif %}
       </section>
     </div>
