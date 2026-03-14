@@ -47,7 +47,6 @@ data/
 tests/
 Dockerfile
 docker-compose.yml
-docker-compose.proxy.yml
 .env.example
 README.md
 ```
@@ -94,31 +93,6 @@ python3 -m unittest discover -s tests
 - The container restarts with `unless-stopped`.
 - Health checks hit `GET /healthz`.
 - Uvicorn is started with proxy header support enabled for future reverse-proxy use.
-- `docker-compose.proxy.yml` is an optional override that attaches the app to an existing external nginx proxy network without breaking normal local development.
-
-## Nginx proxy network
-
-If you already have an nginx reverse proxy container running on a shared Docker network, use the proxy override file instead of changing the base compose file.
-
-1. Set the external network name in `.env` if needed:
-
-   ```env
-   PROXY_NETWORK_NAME=nginx-proxy
-   ```
-
-2. Make sure that Docker network already exists:
-
-   ```bash
-   docker network ls
-   ```
-
-3. Start Soda Picker attached to both its default network and the nginx proxy network:
-
-   ```bash
-   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
-   ```
-
-This keeps plain local development on `docker compose up --build` unchanged, while your deployed stack can join the proxy network cleanly.
 
 ## Raspberry Pi deployment
 
@@ -152,12 +126,6 @@ This project targets Raspberry Pi OS 64-bit (`arm64`) so the official multi-arch
 
    ```bash
    docker compose up -d --build
-   ```
-
-   If PiOne uses an existing nginx reverse proxy Docker network instead, use:
-
-   ```bash
-   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d --build
    ```
 
 7. Check health:
@@ -256,7 +224,6 @@ Replace `./data/sample_sodas.csv` with your real catalog and review these enviro
 - `ACCESS_CONTROL_PASSWORD`
 - `ACCESS_CONTROL_SECRET`
 - `ACCESS_CONTROL_SESSION_DAYS`
-- `PROXY_NETWORK_NAME`
 - `BASIC_AUTH_USERNAME`
 - `BASIC_AUTH_PASSWORD`
 - `TRUSTED_HOSTS`
