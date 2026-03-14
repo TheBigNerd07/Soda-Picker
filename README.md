@@ -1,20 +1,41 @@
 # Soda Picker
 
-Soda Picker is a local-first FastAPI web app that reads a soda catalog from CSV, recommends a soda using time-of-day and caffeine rules, and tracks today's caffeine intake in SQLite. It is intentionally lightweight so the same project works well on a MacBook in Docker and later on a Raspberry Pi behind a reverse proxy or Cloudflare Tunnel.
+Soda Picker is a local-first FastAPI app that reads a soda catalog from CSV, recommends a soda using inventory, preference, time-of-day, weekend, and caffeine-budget rules, and stores local state in SQLite. It is intentionally lightweight so it runs well on a MacBook in Docker and later on a Raspberry Pi behind Cloudflare Tunnel or another reverse proxy.
 
 ## Architecture
 
 - Backend: FastAPI with Jinja templates and static CSS/JS.
-- Catalog: mounted CSV file under `./data`, reloaded automatically when the file changes.
-- State: SQLite database stored in the same mounted `./data` directory.
-- Runtime: a single multi-arch Docker container based on `python:3.12-slim`, suitable for `amd64` Macs and `arm64` Raspberry Pi deployments.
+- Catalog source: CSV from the mounted `./data` directory.
+- Local state: SQLite for consumption history, recommendation history, per-soda local state, and saved runtime overrides.
+- Runtime: single-container Docker deployment based on `python:3.12-slim`, which is multi-arch for `amd64` Macs and `arm64` Raspberry Pi hosts.
 
 Why this fits Raspberry Pi + Docker:
 
-- The app uses only a few Python dependencies and no frontend build pipeline.
-- SQLite keeps persistence simple and fast on local storage.
-- The Docker image stays small and portable.
-- The app exposes a single HTTP port and includes a `/healthz` endpoint for container health checks and future reverse-proxy use.
+- No frontend build chain and only a few Python dependencies.
+- SQLite keeps persistence simple and efficient on local storage.
+- The container image is small and straightforward.
+- The app exposes one HTTP port, includes `/healthz`, and supports optional basic auth, trusted hosts, and rate limiting via environment variables.
+
+## Feature summary
+
+The app now includes:
+
+- CSV import from the UI with validation feedback and automatic CSV backups.
+- Inventory flags so only in-stock sodas get recommended.
+- Favorites, dislikes, and temporary bans per soda.
+- Stronger duplicate avoidance using recent recommendation and consumption history.
+- Weekday and weekend timing rules.
+- A bedtime-aware caffeine squeeze window.
+- Manual caffeine entries for coffee, tea, or anything else.
+- Editable and deletable history entries.
+- Recommendation history with “logged or skipped” tracking.
+- A Soda Passport page for world sodas you have already tried, with origin notes, ratings, and export.
+- A Wishlist page for sodas you want to find again, plus quick-add actions from Catalog and Passport.
+- Export endpoints for consumption history, recommendation history, and the current catalog.
+- Database backup creation and backup file listing.
+- Runtime rule overrides saved in SQLite from the settings UI.
+- Optional browser reminder support plus a calendar reminder export.
+- Optional in-app login access control, basic auth, trusted-host filtering, and in-memory rate limiting.
 
 ## Project layout
 
@@ -32,37 +53,33 @@ README.md
 
 ## Quick start on macOS
 
-1. Copy the example environment file:
+1. Create your local environment file:
 
    ```bash
    cp .env.example .env
    ```
 
-2. Optionally edit `.env` to change the timezone, caffeine limit, or mounted CSV path.
-
-3. Start the app:
+2. Start the app:
 
    ```bash
    docker compose up --build
    ```
 
-4. Open the app in your browser:
+3. Open the app:
 
    ```text
    http://localhost:8000
    ```
 
-   If you changed `APP_PORT`, use that port instead.
-
-5. The default CSV is already included at `./data/sample_sodas.csv`. To use your own catalog, drop a CSV file into `./data/` and update `CSV_PATH` in `.env`, for example:
+4. The sample catalog is already mounted at `./data/sample_sodas.csv`. To use your own file, place it in `./data/` and change:
 
    ```env
    CSV_PATH=/data/my-sodas.csv
    ```
 
-## Running tests locally
+## Local tests
 
-The test suite covers CSV parsing, the pre-10:30 rule, general recommendation behavior, and caffeine-limit behavior.
+The tests cover CSV diagnostics, recommendation rules, weekend timing behavior, duplicate/inventory handling, and the expanded SQLite state layer.
 
 ```bash
 python3 -m unittest discover -s tests
@@ -70,17 +87,18 @@ python3 -m unittest discover -s tests
 
 ## Docker behavior
 
-- `./data` is bind-mounted into the container as `/data`.
-- The SQLite file is created at `DATABASE_PATH`.
+- `./data` is bind-mounted as `/data`.
+- SQLite lives at `DATABASE_PATH`.
+- Backups are written to `BACKUP_DIR`.
 - The container restarts with `unless-stopped`.
 - Health checks hit `GET /healthz`.
-- The app trusts proxy headers so it can sit behind Cloudflare Tunnel or another reverse proxy later.
+- Uvicorn is started with proxy header support enabled for future reverse-proxy use.
 
 ## Raspberry Pi deployment
 
-This project is aimed at Raspberry Pi OS 64-bit (`arm64`), which is the cleanest match for the official multi-arch Python image used here.
+This project targets Raspberry Pi OS 64-bit (`arm64`) so the official multi-arch Python image works cleanly.
 
-1. Install Docker Engine and the Docker Compose plugin on the Pi.
+1. Install Docker Engine and the Docker Compose plugin on PiOne.
 2. Copy the project directory to the Pi.
 3. Create `.env`:
 
@@ -88,22 +106,23 @@ This project is aimed at Raspberry Pi OS 64-bit (`arm64`), which is the cleanest
    cp .env.example .env
    ```
 
-4. Adjust `.env` for the Pi if needed. Typical changes:
+4. Adjust `.env` as needed. A typical Pi configuration looks like this:
 
    ```env
    TZ=America/Los_Angeles
    APP_PORT=8000
    CSV_PATH=/data/sample_sodas.csv
    DATABASE_PATH=/data/soda_picker.db
+   BACKUP_DIR=/data/backups
    ```
 
-5. Make sure the mounted data directory is writable. If the container cannot create the SQLite file, fix the directory owner on the Pi:
+5. Make sure the mounted data directory is writable by the container user:
 
    ```bash
    sudo chown -R 1000:1000 data
    ```
 
-6. Start the app in the background:
+6. Start the app:
 
    ```bash
    docker compose up -d --build
@@ -116,9 +135,15 @@ This project is aimed at Raspberry Pi OS 64-bit (`arm64`), which is the cleanest
    curl http://localhost:8000/healthz
    ```
 
-## CSV format
+8. Open it from another device on your network:
 
-Supported columns:
+   ```text
+   http://PI_IP_ADDRESS:8000
+   ```
+
+## Catalog format
+
+Supported CSV columns:
 
 - `name` (required)
 - `brand`
@@ -133,36 +158,74 @@ Supported columns:
 
 Behavior:
 
-- Missing optional columns are handled gracefully.
+- Missing optional columns are allowed and reported as diagnostics.
 - Disabled rows are ignored.
 - Invalid rows are skipped and logged.
-- The app keeps running even if some rows are malformed.
+- Duplicate soda names are detected and reported.
 
-## App behavior summary
+## Runtime pages
 
-- Before `NO_SODA_BEFORE`, the app refuses to recommend any soda.
-- After that time, recommendations come from the enabled CSV catalog.
-- Caffeine intake is tracked per local day using the configured timezone.
-- Once the daily caffeine limit is reached, caffeinated sodas are blocked.
-- After the cutoff hour, caffeinated sodas are heavily penalized.
-- At night, the engine strongly prefers caffeine-free sodas.
-- Treat mode adds extra randomness without bypassing the hard time and caffeine safety rules.
+- `/` dashboard: recommendation flow, quick manual entries, quick passport entry, reminder controls, and a summary of today’s log, recent recommendations, passport entries, and wishlist items.
+- `/catalog`: CSV import, catalog diagnostics, stock controls, favorites, dislikes, and temporary bans.
+- `/activity`: full editable caffeine log plus recommendation history exports.
+- `/passport`: a long-term soda memory page for sodas you have tried from anywhere, with country/city notes, ratings, and CSV export.
+- `/wishlist`: a separate list of sodas you want to track down, restock, or revisit later.
+- `/settings`: persisted runtime rule overrides, environment-backed value display, exports, and backup controls.
+- `/healthz`: container health endpoint.
 
-## Future reverse proxy / Cloudflare notes
+## Security and proxy notes
 
-- The app serves plain HTTP on one port and expects the proxy to terminate TLS.
-- Uvicorn is started with proxy header support enabled.
-- No authentication is built in yet, but the app surface is small and easy to put behind Cloudflare Access, basic auth, or a home-lab reverse proxy later.
+- `ACCESS_CONTROL_MODE=off|writes|all`: `writes` keeps the app readable but requires login for picks, edits, admin pages, and exports; `all` requires login for the whole app.
+- `ACCESS_CONTROL_USERNAME`, `ACCESS_CONTROL_PASSWORD`, `ACCESS_CONTROL_SECRET`: required when `ACCESS_CONTROL_MODE` is enabled.
+- `ACCESS_CONTROL_SESSION_DAYS`: cookie lifetime for the in-app login.
+- `BASIC_AUTH_USERNAME` and `BASIC_AUTH_PASSWORD`: if both are set, the app requires HTTP basic auth on all HTTP endpoints except `/healthz`.
+- Do not enable both `ACCESS_CONTROL_*` and `BASIC_AUTH_*` at the same time.
+- `TRUSTED_HOSTS`: optional comma-separated allowlist for Host header validation. Leave blank to disable.
+- `RATE_LIMIT_REQUESTS` and `RATE_LIMIT_WINDOW_SECONDS`: simple in-memory rate limiting.
+- TLS is still expected to terminate at Cloudflare Tunnel or another reverse proxy.
+
+## Reminder behavior
+
+- `REMINDER_ENABLED=true` turns on reminder support in the UI.
+- Browser reminders work when the dashboard is open and the browser grants notification permission.
+- `/exports/reminder.ics` exports a recurring calendar reminder, which is the better option if you want reminders outside the browser tab.
+
+## Backup strategy
+
+- Use the “Create on-disk backup snapshot” button on the settings page to copy the database and current catalog into `BACKUP_DIR`.
+- Use the export links for ad hoc downloads.
+- Because `./data` is the full local state of the app, backing up that directory is the simplest disaster-recovery plan.
 
 ## What to customize
 
-- Replace `./data/sample_sodas.csv` with your real soda catalog.
-- Edit `.env` to set:
-  - `TZ`
-  - `NO_SODA_BEFORE`
-  - `DAILY_CAFFEINE_LIMIT_MG`
-  - `CAFFEINE_CUTOFF_HOUR`
-  - `CSV_PATH`
-  - `DATABASE_PATH`
-  - `CHAOS_MODE_DEFAULT`
-- Assumption: PiOne will run a 64-bit Raspberry Pi OS or another `arm64` Docker host.
+Replace `./data/sample_sodas.csv` with your real catalog and review these environment variables:
+
+- `TZ`
+- `NO_SODA_BEFORE`
+- `WEEKEND_NO_SODA_BEFORE`
+- `DAILY_CAFFEINE_LIMIT_MG`
+- `WEEKEND_DAILY_CAFFEINE_LIMIT_MG`
+- `CAFFEINE_CUTOFF_HOUR`
+- `WEEKEND_CAFFEINE_CUTOFF_HOUR`
+- `BEDTIME_HOUR`
+- `WEEKEND_BEDTIME_HOUR`
+- `LATEST_CAFFEINE_HOURS_BEFORE_BED`
+- `DUPLICATE_LOOKBACK`
+- `CSV_PATH`
+- `DATABASE_PATH`
+- `BACKUP_DIR`
+- `CHAOS_MODE_DEFAULT`
+- `REMINDER_ENABLED`
+- `REMINDER_TIME`
+- `ACCESS_CONTROL_MODE`
+- `ACCESS_CONTROL_USERNAME`
+- `ACCESS_CONTROL_PASSWORD`
+- `ACCESS_CONTROL_SECRET`
+- `ACCESS_CONTROL_SESSION_DAYS`
+- `BASIC_AUTH_USERNAME`
+- `BASIC_AUTH_PASSWORD`
+- `TRUSTED_HOSTS`
+- `RATE_LIMIT_REQUESTS`
+- `RATE_LIMIT_WINDOW_SECONDS`
+
+Assumption: PiOne runs a 64-bit `arm64` Raspberry Pi OS or equivalent Docker host.

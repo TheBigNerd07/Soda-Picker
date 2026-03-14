@@ -2,76 +2,195 @@
 {% block title %}Catalog | Soda Picker{% endblock %}
 {% block content %}
   <section class="panel page-header">
-    <p class="eyebrow">Soda catalog</p>
-    <h1>Loaded from CSV</h1>
+    <p class="eyebrow">Catalog control</p>
+    <h1>Inventory, preferences, and CSV import.</h1>
     <p class="lede">
-      Only enabled rows are loaded. Bad rows are skipped and logged without crashing the app.
+      This page now does two jobs: it validates and replaces the CSV source of truth,
+      and it stores local-only state like stock, favorites, dislikes, temporary bans, and wishlist jumps.
     </p>
   </section>
 
-  <section class="panel">
-    <div class="section-heading">
-      <div>
-        <h2>{{ sodas|length }} sodas available</h2>
-        <p class="section-subtle">Source: <code>{{ settings.csv_path }}</code></p>
-      </div>
-      <a class="text-link" href="/">Back to dashboard</a>
+  {% if flash_message %}
+    <section class="flash panel">
+      <strong>Saved.</strong> {{ flash_message }}
+    </section>
+  {% endif %}
+
+  {% if import_feedback %}
+    <section class="panel import-feedback {{ import_feedback.status }}">
+      <p class="eyebrow">Import feedback</p>
+      <h2>{{ import_feedback.title }}</h2>
+      <ul class="note-list">
+        {% for detail in import_feedback.details %}
+          <li>{{ detail }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  <section class="dashboard-grid">
+    <div class="column-main">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Loaded sodas</p>
+            <h2>{{ catalog_items|length }} entries in play</h2>
+          </div>
+          <a class="button tertiary" href="/exports/catalog.csv">Download current CSV</a>
+        </div>
+        <div class="table-scroll">
+          <table class="catalog-table">
+            <thead>
+              <tr>
+                <th>Soda</th>
+                <th>Caffeine</th>
+                <th>Category</th>
+                <th>Status</th>
+                <th>Controls</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in catalog_items %}
+                <tr>
+                  <td>
+                    <strong>{{ item.soda.display_name }}</strong>
+                    <div class="badge-row compact">
+                      {% for badge in item.soda.badge_labels %}
+                        <span class="badge small">{{ badge }}</span>
+                      {% endfor %}
+                      {% if item.state.preference == 'favorite' %}
+                        <span class="badge accent small">Favorite</span>
+                      {% elif item.state.preference == 'dislike' %}
+                        <span class="badge warning small">Disliked</span>
+                      {% endif %}
+                      {% if not item.state.is_available %}
+                        <span class="badge warning small">Out of stock</span>
+                      {% endif %}
+                      {% if item.state.temp_ban_until %}
+                        <span class="badge small">Banned until {{ item.state.temp_ban_until|calendar_date }}</span>
+                      {% endif %}
+                    </div>
+                  </td>
+                  <td>{{ item.soda.caffeine_mg|number }} mg</td>
+                  <td>{{ item.soda.category }}</td>
+                  <td>
+                    <p>{{ item.soda.priority }} priority</p>
+                    {% if item.soda.tags %}
+                      <p>{{ item.soda.tags|join(", ") }}</p>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <form action="/catalog/state" method="post" class="stack-form compact">
+                      <input type="hidden" name="soda_id" value="{{ item.id }}">
+                      <label class="inline-check">
+                        <input type="checkbox" name="is_available" value="true" {% if item.state.is_available %}checked{% endif %}>
+                        <span>In stock</span>
+                      </label>
+                      <label>
+                        <span>Preference</span>
+                        <select name="preference">
+                          <option value="neutral" {% if item.state.preference == 'neutral' %}selected{% endif %}>Neutral</option>
+                          <option value="favorite" {% if item.state.preference == 'favorite' %}selected{% endif %}>Favorite</option>
+                          <option value="dislike" {% if item.state.preference == 'dislike' %}selected{% endif %}>Dislike</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Ban until</span>
+                        <input type="date" name="temp_ban_until" value="{{ item.state.temp_ban_until.isoformat() if item.state.temp_ban_until else '' }}">
+                      </label>
+                      <div class="button-row">
+                        <button type="submit" class="button secondary small-button">Save</button>
+                      </div>
+                    </form>
+                    <form action="/wishlist/from-catalog" method="post" class="inline-form top-gap">
+                      <input type="hidden" name="soda_id" value="{{ item.id }}">
+                      <button type="submit" class="button tertiary small-button">Add to wishlist</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
 
-    {% if warnings %}
-      <div class="inline-warning">
-        <strong>CSV warnings:</strong>
-        <ul class="warning-list compact">
-          {% for warning in warnings %}
-            <li>{{ warning }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
+    <div class="column-side">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">CSV import</p>
+            <h2>Replace the catalog</h2>
+          </div>
+        </div>
+        <form action="/catalog/import" method="post" enctype="multipart/form-data" class="stack-form">
+          <label>
+            <span>Upload CSV</span>
+            <input type="file" name="upload" accept=".csv,text/csv" required>
+          </label>
+          <button type="submit" class="button">Validate and import</button>
+        </form>
+        <p class="helper-text">
+          Imports back up the current CSV first, then replace the mounted file if validation passes.
+        </p>
+      </section>
 
-    <div class="table-scroll">
-      <table class="catalog-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Brand</th>
-            <th>Caffeine</th>
-            <th>Sugar</th>
-            <th>Category</th>
-            <th>Diet</th>
-            <th>Caffeine-free</th>
-            <th>Priority</th>
-            <th>Tags</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for soda in sodas %}
-            <tr>
-              <td>{{ soda.name }}</td>
-              <td>{{ soda.brand or "—" }}</td>
-              <td>{{ soda.caffeine_mg|number }} mg</td>
-              <td>
-                {% if soda.sugar_g is not none %}
-                  {{ soda.sugar_g|number }} g
-                {% else %}
-                  —
-                {% endif %}
-              </td>
-              <td>{{ soda.category }}</td>
-              <td>{{ soda.is_diet|yes_no }}</td>
-              <td>{{ soda.is_caffeine_free|yes_no }}</td>
-              <td>{{ soda.priority }}</td>
-              <td>
-                {% if soda.tags %}
-                  {{ soda.tags|join(", ") }}
-                {% else %}
-                  —
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Diagnostics</p>
+            <h2>Catalog health</h2>
+          </div>
+        </div>
+        <dl class="detail-list">
+          <div>
+            <dt>Total rows</dt>
+            <dd>{{ catalog_diagnostics.total_rows }}</dd>
+          </div>
+          <div>
+            <dt>Enabled rows</dt>
+            <dd>{{ catalog_diagnostics.loaded_rows }}</dd>
+          </div>
+          <div>
+            <dt>Disabled rows</dt>
+            <dd>{{ catalog_diagnostics.disabled_rows }}</dd>
+          </div>
+          <div>
+            <dt>Invalid rows</dt>
+            <dd>{{ catalog_diagnostics.invalid_rows }}</dd>
+          </div>
+        </dl>
+        {% if catalog_diagnostics.duplicate_names %}
+          <div class="mini-panel">
+            <p class="mini-panel-title">Duplicate names</p>
+            <ul class="note-list">
+              {% for name in catalog_diagnostics.duplicate_names %}
+                <li>{{ name }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+        {% if catalog_diagnostics.missing_optional_columns %}
+          <div class="mini-panel">
+            <p class="mini-panel-title">Missing optional columns</p>
+            <ul class="note-list">
+              {% for column in catalog_diagnostics.missing_optional_columns %}
+                <li>{{ column }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+        {% if catalog_diagnostics.warnings %}
+          <div class="mini-panel">
+            <p class="mini-panel-title">Warnings</p>
+            <ul class="note-list">
+              {% for warning in catalog_diagnostics.warnings %}
+                <li>{{ warning }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+      </section>
     </div>
   </section>
 {% endblock %}

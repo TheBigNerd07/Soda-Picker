@@ -9,7 +9,7 @@ from app.catalog import SodaCatalog
 
 
 class SodaCatalogTests(unittest.TestCase):
-    def test_parser_skips_disabled_and_bad_rows(self) -> None:
+    def test_parser_skips_disabled_bad_rows_and_reports_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "sodas.csv"
             csv_path.write_text(
@@ -26,11 +26,15 @@ class SodaCatalogTests(unittest.TestCase):
 
             catalog = SodaCatalog(str(csv_path))
             sodas = catalog.list_sodas()
+            diagnostics = catalog.diagnostics
 
             self.assertEqual(len(sodas), 1)
             self.assertEqual(sodas[0].name, "Cola Prime")
-            self.assertEqual(sodas[0].priority, 3)
-            self.assertIn("Row 3", catalog.warnings[0])
+            self.assertEqual(diagnostics.loaded_rows, 1)
+            self.assertEqual(diagnostics.disabled_rows, 1)
+            self.assertEqual(diagnostics.invalid_rows, 1)
+            self.assertIn("category", diagnostics.missing_optional_columns)
+            self.assertTrue(any("Row 3" in warning for warning in catalog.warnings))
 
     def test_missing_optional_columns_are_handled(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -52,6 +56,25 @@ class SodaCatalogTests(unittest.TestCase):
             self.assertEqual(sodas[0].name, "Mystery Fizz")
             self.assertEqual(sodas[0].caffeine_mg, 0.0)
             self.assertTrue(sodas[0].is_caffeine_free)
+
+    def test_duplicate_names_are_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "sodas.csv"
+            csv_path.write_text(
+                textwrap.dedent(
+                    """\
+                    name,brand,caffeine_mg,enabled
+                    Cola Prime,Example,38,true
+                    Cola Prime,Example,12,true
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            catalog = SodaCatalog(str(csv_path))
+            catalog.list_sodas()
+
+            self.assertIn("Example Cola Prime", catalog.diagnostics.duplicate_names)
 
 
 if __name__ == "__main__":

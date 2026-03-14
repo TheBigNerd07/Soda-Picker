@@ -2,44 +2,195 @@
 {% block title %}Settings | Soda Picker{% endblock %}
 {% block content %}
   <section class="panel page-header">
-    <p class="eyebrow">Runtime configuration</p>
-    <h1>Environment-backed settings</h1>
+    <p class="eyebrow">Settings</p>
+    <h1>Persisted runtime rules and admin controls.</h1>
     <p class="lede">
-      These values come from environment variables. Edit <code>.env</code>, then restart the container to apply changes.
+      The fields below save lightweight runtime overrides in SQLite, while host, Docker,
+      auth, proxy, and file-path settings remain environment-backed.
     </p>
   </section>
+
+  {% if flash_message %}
+    <section class="flash panel">
+      <strong>Saved.</strong> {{ flash_message }}
+    </section>
+  {% endif %}
 
   <section class="settings-grid">
     <article class="panel">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Current values</p>
-          <h2>App configuration</h2>
+          <p class="eyebrow">Runtime overrides</p>
+          <h2>Recommendation behavior</h2>
         </div>
       </div>
-      <dl class="detail-list large">
-        {% for key, value in settings_items %}
-          <div>
-            <dt>{{ key }}</dt>
-            <dd>{{ value }}</dd>
-          </div>
-        {% endfor %}
-      </dl>
+      <form action="/settings/save" method="post" class="stack-form">
+        <div class="form-grid">
+          <label>
+            <span>Weekday no-soda-before</span>
+            <input type="time" name="no_soda_before" value="{{ settings.no_soda_before }}">
+          </label>
+          <label>
+            <span>Weekend no-soda-before</span>
+            <input type="time" name="weekend_no_soda_before" value="{{ settings.weekend_no_soda_before }}">
+          </label>
+          <label>
+            <span>Weekday daily limit (mg)</span>
+            <input type="number" min="0" step="1" name="daily_caffeine_limit_mg" value="{{ settings.daily_caffeine_limit_mg }}">
+          </label>
+          <label>
+            <span>Weekend daily limit (mg)</span>
+            <input type="number" min="0" step="1" name="weekend_daily_caffeine_limit_mg" value="{{ settings.weekend_daily_caffeine_limit_mg }}">
+          </label>
+          <label>
+            <span>Weekday caffeine cutoff hour</span>
+            <input type="number" min="0" max="23" step="1" name="caffeine_cutoff_hour" value="{{ settings.caffeine_cutoff_hour }}">
+          </label>
+          <label>
+            <span>Weekend caffeine cutoff hour</span>
+            <input type="number" min="0" max="23" step="1" name="weekend_caffeine_cutoff_hour" value="{{ settings.weekend_caffeine_cutoff_hour }}">
+          </label>
+          <label>
+            <span>Weekday bedtime hour</span>
+            <input type="number" min="0" max="23" step="1" name="bedtime_hour" value="{{ settings.bedtime_hour }}">
+          </label>
+          <label>
+            <span>Weekend bedtime hour</span>
+            <input type="number" min="0" max="23" step="1" name="weekend_bedtime_hour" value="{{ settings.weekend_bedtime_hour }}">
+          </label>
+          <label>
+            <span>Hours before bed to squeeze caffeine</span>
+            <input type="number" min="0" max="12" step="1" name="latest_caffeine_hours_before_bed" value="{{ settings.latest_caffeine_hours_before_bed }}">
+          </label>
+          <label>
+            <span>No-repeat lookback</span>
+            <input type="number" min="1" max="12" step="1" name="duplicate_lookback" value="{{ settings.duplicate_lookback }}">
+          </label>
+          <label>
+            <span>Reminder time</span>
+            <input type="time" name="reminder_time" value="{{ settings.reminder_time }}">
+          </label>
+        </div>
+        <div class="toggle-row">
+          <input type="hidden" name="chaos_mode_default" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="chaos_mode_default" value="true" {% if settings.chaos_mode_default %}checked{% endif %}>
+            <span>Treat mode on by default</span>
+          </label>
+          <input type="hidden" name="reminder_enabled" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="reminder_enabled" value="true" {% if settings.reminder_enabled %}checked{% endif %}>
+            <span>Enable reminder support</span>
+          </label>
+        </div>
+        <div class="button-row">
+          <button type="submit" class="button">Save runtime settings</button>
+        </div>
+      </form>
+      <form action="/settings/reset" method="post" class="inline-form top-gap">
+        <button type="submit" class="button tertiary">Clear saved overrides</button>
+      </form>
     </article>
 
     <article class="panel">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Behavior summary</p>
-          <h2>What the app is doing</h2>
+          <p class="eyebrow">Current values</p>
+          <h2>Live configuration map</h2>
         </div>
       </div>
-      <ul class="bullet-list">
-        <li>Before {{ settings.no_soda_before_display }}, the picker refuses to recommend any soda.</li>
-        <li>After {{ settings.caffeine_cutoff_hour }}:00, caffeinated sodas get heavily penalized.</li>
-        <li>Once the daily caffeine total reaches {{ settings.daily_caffeine_limit_mg }} mg, only caffeine-free sodas can be recommended.</li>
-        <li>The app watches the mounted CSV file and reloads it when it changes.</li>
-      </ul>
+      <dl class="detail-list large">
+        {% for key, value, source in settings_items %}
+          <div>
+            <dt>{{ key }}</dt>
+            <dd>
+              {{ value }}
+              <span class="badge {% if source == 'override' %}accent{% endif %} small">{{ source }}</span>
+            </dd>
+          </div>
+        {% endfor %}
+      </dl>
     </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <div class="column-main">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Exports and backups</p>
+            <h2>Protect the data directory</h2>
+          </div>
+        </div>
+        <div class="button-row">
+          <a class="button tertiary" href="/exports/consumption.csv">Consumption CSV</a>
+          <a class="button tertiary" href="/exports/recommendations.csv">Recommendation CSV</a>
+          <a class="button tertiary" href="/exports/passport.csv">Passport CSV</a>
+          <a class="button tertiary" href="/exports/wishlist.csv">Wishlist CSV</a>
+          <a class="button tertiary" href="/exports/database.sqlite">Database backup download</a>
+          <a class="button tertiary" href="/exports/catalog.csv">Current catalog CSV</a>
+        </div>
+        <form action="/backups/create" method="post" class="inline-form top-gap">
+          <button type="submit" class="button secondary">Create on-disk backup snapshot</button>
+        </form>
+        <p class="helper-text">
+          The snapshot action writes a database copy and the current CSV into <code>{{ settings.backup_dir }}</code>.
+        </p>
+      </section>
+    </div>
+
+    <div class="column-side">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Access control</p>
+            <h2>Current app protection</h2>
+          </div>
+        </div>
+        <dl class="detail-list">
+          <div>
+            <dt>Mode</dt>
+            <dd>{{ access_control_mode_label }}</dd>
+          </div>
+          <div>
+            <dt>App login</dt>
+            <dd>{{ settings.access_control_username or "disabled" }}</dd>
+          </div>
+          <div>
+            <dt>Basic auth</dt>
+            <dd>{{ "enabled" if settings.basic_auth_enabled else "disabled" }}</dd>
+          </div>
+        </dl>
+        <p class="helper-text top-gap">
+          Access control stays environment-backed on purpose. Set <code>ACCESS_CONTROL_MODE</code>, <code>ACCESS_CONTROL_USERNAME</code>, <code>ACCESS_CONTROL_PASSWORD</code>, and <code>ACCESS_CONTROL_SECRET</code> in your <code>.env</code>.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Backup list</p>
+            <h2>Recent backup files</h2>
+          </div>
+        </div>
+        {% if backup_files %}
+          <ul class="history-list">
+            {% for file in backup_files %}
+              <li class="history-item">
+                <div>
+                  <strong>{{ file.name }}</strong>
+                  <p>{{ file.size_label }}</p>
+                </div>
+                <div class="history-meta">
+                  <span>{{ file.created_label }}</span>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-copy">No backup files yet.</p>
+        {% endif %}
+      </section>
+    </div>
   </section>
 {% endblock %}

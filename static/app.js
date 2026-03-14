@@ -23,3 +23,95 @@ if (clock) {
     window.setInterval(render, 1000);
   }
 }
+
+const reminderConfig = document.getElementById("reminder-config");
+const permissionButton = document.getElementById("notification-permission");
+
+const getTimeParts = (timezone) => {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const map = {};
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      map[part.type] = part.value;
+    }
+  }
+  return map;
+};
+
+if (reminderConfig && permissionButton) {
+  const enabled = reminderConfig.dataset.enabled === "true";
+  const reminderTime = reminderConfig.dataset.reminderTime || "";
+  const timezone = reminderConfig.dataset.timezone || "UTC";
+
+  if (!enabled) {
+    permissionButton.textContent = "Reminder disabled in settings";
+    permissionButton.disabled = true;
+  } else if (!("Notification" in window)) {
+    permissionButton.textContent = "Browser notifications unsupported";
+    permissionButton.disabled = true;
+  } else {
+    const updatePermissionButton = () => {
+      if (Notification.permission === "granted") {
+        permissionButton.textContent = "Browser reminders enabled";
+        permissionButton.disabled = true;
+      } else if (Notification.permission === "denied") {
+        permissionButton.textContent = "Browser reminders blocked";
+        permissionButton.disabled = true;
+      } else {
+        permissionButton.textContent = "Enable browser reminder";
+        permissionButton.disabled = false;
+      }
+    };
+
+    permissionButton.addEventListener("click", async () => {
+      const result = await Notification.requestPermission();
+      if (result === "granted") {
+        new Notification("Soda Picker", {
+          body: "Browser reminders are on for this tab.",
+        });
+      }
+      updatePermissionButton();
+    });
+
+    updatePermissionButton();
+
+    const [targetHour, targetMinute] = reminderTime.split(":").map((value) => Number.parseInt(value, 10));
+    const maybeNotify = () => {
+      if (Notification.permission !== "granted") {
+        return;
+      }
+      if (Number.isNaN(targetHour) || Number.isNaN(targetMinute)) {
+        return;
+      }
+
+      const parts = getTimeParts(timezone);
+      const currentHour = Number.parseInt(parts.hour, 10);
+      const currentMinute = Number.parseInt(parts.minute, 10);
+      const dateKey = `${parts.year}-${parts.month}-${parts.day}`;
+      const reminderKey = `soda-picker-reminder-${dateKey}-${reminderTime}`;
+
+      if (currentHour === targetHour && currentMinute === targetMinute) {
+        if (window.localStorage.getItem(reminderKey) === "sent") {
+          return;
+        }
+        window.localStorage.setItem(reminderKey, "sent");
+        new Notification("Soda window is open", {
+          body: "Soda Picker says your reminder window just opened.",
+        });
+      }
+    };
+
+    maybeNotify();
+    window.setInterval(maybeNotify, 30000);
+  }
+}

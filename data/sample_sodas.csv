@@ -24,36 +24,8 @@ Crush Strawberry,Keurig Dr Pepper,0,44,strawberry,false,true,fruit,7,true
 Barq's Root Beer,Coca-Cola,22,45,root-beer,false,false,root-beer;caffeinated,9,true
 A&W Root Beer,Keurig Dr Pepper,0,43,root-beer,false,true,classic,9,true
 Mug Root Beer,PepsiCo,0,43,root-beer,false,true,classic,8,true
-IBC Root Beer,IBC,0,43,root-beer,false,true,craft,6,true
-Stewart's Root Beer,Stewart's,0,43,root-beer,false,true,craft,6,true
 A&W Cream Soda,Keurig Dr Pepper,0,44,cream-soda,false,true,classic,8,true
 Barq's Cream Soda,Coca-Cola,0,44,cream-soda,false,true,classic,7,true
 Canada Dry Ginger Ale,Coca-Cola,0,32,ginger-ale,false,true,classic,9,true
-Diet Canada Dry Ginger Ale,Coca-Cola,0,0,ginger-ale,true,true,diet,8,true
 Seagram's Ginger Ale,Keurig Dr Pepper,0,32,ginger-ale,false,true,classic,8,true
-Schweppes Ginger Ale,Schweppes,0,32,ginger-ale,false,true,classic,7,true
-Schweppes Tonic Water,Schweppes,0,32,tonic,false,true,tonic,6,true
-Canada Dry Tonic Water,Coca-Cola,0,32,tonic,false,true,tonic,6,true
 Squirt,Keurig Dr Pepper,0,44,grapefruit,false,true,grapefruit,7,true
-Diet Squirt,Keurig Dr Pepper,0,0,grapefruit,true,true,diet,7,true
-Fresca,Coca-Cola,0,0,grapefruit,true,true,zero;grapefruit,8,true
-Big Red,Big Red Inc,0,44,cream-soda,false,true,regional,7,true
-Big Blue,Big Red Inc,0,44,berry,false,true,regional,6,true
-RC Cola,RC,34,42,cola,false,false,classic,7,true
-Cheerwine,Cheerwine,0,42,cherry,false,true,regional,8,true
-Jones Cola,Jones Soda,34,42,cola,false,false,cane-sugar,6,true
-Jones Cream Soda,Jones Soda,0,44,cream-soda,false,true,cane-sugar,6,true
-Jones Root Beer,Jones Soda,0,44,root-beer,false,true,cane-sugar,6,true
-Virgil's Root Beer,Virgil's,0,44,root-beer,false,true,craft,5,true
-Virgil's Cream Soda,Virgil's,0,44,cream-soda,false,true,craft,5,true
-Reed's Ginger Beer,Reed's,0,40,ginger,false,true,strong-ginger,5,true
-Bundaberg Ginger Beer,Bundaberg,0,40,ginger,false,true,strong-ginger,5,true
-Topo Chico Sabores Orange,Tropical,0,35,fruit,false,true,sparkling,5,true
-Topo Chico Sabores Lime,Tropical,0,35,fruit,false,true,sparkling,5,true
-Topo Chico Sabores Grapefruit,Tropical,0,35,fruit,false,true,sparkling,5,true
-LaCroix Cola,LaCroix,0,0,sparkling,true,true,flavored-water,4,true
-LaCroix Lemon,LaCroix,0,0,sparkling,true,true,flavored-water,4,true
-LaCroix Lime,LaCroix,0,0,sparkling,true,true,flavored-water,4,true
-LaCroix Orange,LaCroix,0,0,sparkling,true,true,flavored-water,4,true
-Polar Orange Dry,Polar,0,0,sparkling,true,true,flavored-water,4,true
-Polar Ginger Lime Mule,Polar,0,0,sparkling,true,true,flavored-water,4,true

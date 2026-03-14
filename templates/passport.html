@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Passport | Soda Picker{% endblock %}
+{% block content %}
+  <section class="panel page-header">
+    <p class="eyebrow">Soda passport</p>
+    <h1>Track the sodas you have tried around the world.</h1>
+    <p class="lede">
+      This section is your personal world-soda log. It is separate from daily caffeine tracking,
+      so you can keep a long-term list of what you have had, where it came from, and whether you would drink it again.
+    </p>
+  </section>
+
+  {% if flash_message %}
+    <section class="flash panel">
+      <strong>Saved.</strong> {{ flash_message }}
+    </section>
+  {% endif %}
+
+  <section class="stats-grid">
+    <article class="stat-card panel">
+      <p class="stat-label">Passport entries</p>
+      <p class="stat-value">{{ passport_summary.total_entries }}</p>
+      <p class="stat-note">Every bottle, can, and weird regional soda you log</p>
+    </article>
+    <article class="stat-card panel">
+      <p class="stat-label">Unique sodas</p>
+      <p class="stat-value">{{ passport_summary.unique_sodas }}</p>
+      <p class="stat-note">Brand and name combinations tracked</p>
+    </article>
+    <article class="stat-card panel">
+      <p class="stat-label">Countries</p>
+      <p class="stat-value">{{ passport_summary.countries_count }}</p>
+      <p class="stat-note">
+        {% if passport_summary.latest_country %}
+          Latest origin: {{ passport_summary.latest_country }}
+        {% else %}
+          Add a country when you know it
+        {% endif %}
+      </p>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <div class="column-main">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Passport log</p>
+            <h2>Sodas you have already had</h2>
+          </div>
+          <div class="button-row">
+            <a class="button tertiary" href="/exports/passport.csv">Download passport CSV</a>
+            <a class="button tertiary" href="/wishlist">Open wishlist</a>
+          </div>
+        </div>
+        {% if passport_entries %}
+          <div class="editor-list">
+            {% for entry in passport_entries %}
+              <details class="entry-editor">
+                <summary>
+                  <div>
+                    <strong>{{ entry.display_name }}</strong>
+                    <p>{{ entry.origin_label }} · {{ entry.tried_on_label }}</p>
+                    {% if entry.where_tried %}
+                      <p>{{ entry.where_tried }}</p>
+                    {% endif %}
+                  </div>
+                  <div class="history-meta">
+                    <span class="badge {% if entry.would_try_again %}accent{% endif %} small">{{ entry.rating_label }}</span>
+                    <span class="badge {% if entry.would_try_again %}accent{% else %}warning{% endif %} small">
+                      {% if entry.would_try_again %}Would try again{% else %}One and done{% endif %}
+                    </span>
+                  </div>
+                </summary>
+                <form action="/passport/{{ entry.id }}/update" method="post" class="stack-form">
+                  <div class="form-grid">
+                    <label>
+                      <span>Soda name</span>
+                      <input type="text" name="soda_name" value="{{ entry.soda_name }}" required>
+                    </label>
+                    <label>
+                      <span>Brand</span>
+                      <input type="text" name="brand" value="{{ entry.brand }}">
+                    </label>
+                    <label>
+                      <span>Country</span>
+                      <input type="text" name="country" value="{{ entry.country }}">
+                    </label>
+                    <label>
+                      <span>Region / state</span>
+                      <input type="text" name="region" value="{{ entry.region }}">
+                    </label>
+                    <label>
+                      <span>City</span>
+                      <input type="text" name="city" value="{{ entry.city }}">
+                    </label>
+                    <label>
+                      <span>Category</span>
+                      <input type="text" name="category" value="{{ entry.category }}" placeholder="Cola, fruit, cream soda">
+                    </label>
+                    <label>
+                      <span>Tried on</span>
+                      <input type="date" name="tried_on" value="{{ entry.tried_on.isoformat() }}">
+                    </label>
+                    <label>
+                      <span>Rating</span>
+                      <select name="rating">
+                        <option value="" {% if entry.rating is none %}selected{% endif %}>Unrated</option>
+                        {% for value in range(1, 6) %}
+                          <option value="{{ value }}" {% if entry.rating == value %}selected{% endif %}>{{ value }}/5</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    <span>Where you had it</span>
+                    <input type="text" name="where_tried" value="{{ entry.where_tried }}" placeholder="Store, trip, restaurant, city">
+                  </label>
+                  <label class="inline-check">
+                    <input type="checkbox" name="would_try_again" value="true" {% if entry.would_try_again %}checked{% endif %}>
+                    <span>I would drink this again</span>
+                  </label>
+                  <label>
+                    <span>Notes</span>
+                    <textarea name="notes" rows="3">{{ entry.notes }}</textarea>
+                  </label>
+                  <div class="button-row">
+                    <button type="submit" class="button secondary">Save passport entry</button>
+                  </div>
+                </form>
+                <form action="/wishlist/from-passport" method="post" class="inline-form delete-form">
+                  <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                  <button type="submit" class="button tertiary">Add to wishlist</button>
+                </form>
+                <form action="/passport/{{ entry.id }}/delete" method="post" class="inline-form delete-form">
+                  <button type="submit" class="button danger">Delete entry</button>
+                </form>
+              </details>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="empty-copy">No passport entries yet.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <div class="column-side">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">New passport entry</p>
+            <h2>Add a soda you have tried</h2>
+          </div>
+        </div>
+        <form action="/passport/add" method="post" class="stack-form">
+          <label>
+            <span>Soda name</span>
+            <input type="text" name="soda_name" placeholder="Guarana Antarctica" required>
+          </label>
+          <label>
+            <span>Brand</span>
+            <input type="text" name="brand" placeholder="Optional">
+          </label>
+          <div class="form-grid">
+            <label>
+              <span>Country</span>
+              <input type="text" name="country" placeholder="Brazil">
+            </label>
+            <label>
+              <span>Region / state</span>
+              <input type="text" name="region" placeholder="Optional">
+            </label>
+            <label>
+              <span>City</span>
+              <input type="text" name="city" placeholder="Optional">
+            </label>
+            <label>
+              <span>Category</span>
+              <input type="text" name="category" placeholder="Fruit soda, cola, cream soda">
+            </label>
+            <label>
+              <span>Tried on</span>
+              <input type="date" name="tried_on" value="{{ passport_entry_date }}">
+            </label>
+            <label>
+              <span>Rating</span>
+              <select name="rating">
+                <option value="" selected>Unrated</option>
+                {% for value in range(1, 6) %}
+                  <option value="{{ value }}">{{ value }}/5</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+          <label>
+            <span>Where you had it</span>
+            <input type="text" name="where_tried" placeholder="Convenience store, trip, soda shop">
+          </label>
+          <label class="inline-check">
+            <input type="checkbox" name="would_try_again" value="true">
+            <span>I would drink this again</span>
+          </label>
+          <label>
+            <span>Notes</span>
+            <textarea name="notes" rows="4" placeholder="Flavor notes, rarity, memory, anything useful"></textarea>
+          </label>
+          <button type="submit" class="button">Add to passport</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">What this is for</p>
+            <h2>Long-term soda memory</h2>
+          </div>
+        </div>
+        <ul class="note-list">
+          <li>Track sodas that are not in your current local inventory.</li>
+          <li>Keep origin and travel notes separate from daily caffeine logging.</li>
+          <li>Use ratings and the “would try again” flag to remember what was actually good.</li>
+        </ul>
+      </section>
+    </div>
+  </section>
+{% endblock %}

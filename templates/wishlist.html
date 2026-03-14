@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Wishlist | Soda Picker{% endblock %}
+{% block content %}
+  <section class="panel page-header">
+    <p class="eyebrow">Wishlist</p>
+    <h1>Keep tabs on the sodas you want to find next.</h1>
+    <p class="lede">
+      Use this list for hard-to-find favorites, world sodas you want again, and anything worth hunting down on future trips.
+    </p>
+  </section>
+
+  {% if flash_message %}
+    <section class="flash panel">
+      <strong>Saved.</strong> {{ flash_message }}
+    </section>
+  {% endif %}
+
+  <section class="stats-grid">
+    <article class="stat-card panel">
+      <p class="stat-label">Total entries</p>
+      <p class="stat-value">{{ wishlist_summary.total_entries }}</p>
+      <p class="stat-note">Everything you are tracking</p>
+    </article>
+    <article class="stat-card panel">
+      <p class="stat-label">Active hunts</p>
+      <p class="stat-value">{{ wishlist_summary.active_entries }}</p>
+      <p class="stat-note">{{ wishlist_summary.high_priority_entries }} high priority right now</p>
+    </article>
+    <article class="stat-card panel">
+      <p class="stat-label">Found</p>
+      <p class="stat-value">{{ wishlist_summary.found_entries }}</p>
+      <p class="stat-note">{{ wishlist_summary.archived_entries }} archived</p>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <div class="column-main">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Wishlist log</p>
+            <h2>Wanted, found, and retired entries</h2>
+          </div>
+          <a class="button tertiary" href="/exports/wishlist.csv">Download wishlist CSV</a>
+        </div>
+        {% if wishlist_entries %}
+          <div class="editor-list">
+            {% for entry in wishlist_entries %}
+              <details class="entry-editor">
+                <summary>
+                  <div>
+                    <strong>{{ entry.display_name }}</strong>
+                    <p>{{ entry.status_label }} · Priority {{ entry.priority }}/5 · {{ entry.source_label }}</p>
+                    {% if entry.country or entry.category %}
+                      <p>
+                        {% if entry.country %}{{ entry.country }}{% endif %}
+                        {% if entry.country and entry.category %} · {% endif %}
+                        {% if entry.category %}{{ entry.category }}{% endif %}
+                      </p>
+                    {% endif %}
+                  </div>
+                  <div class="history-meta">
+                    <span>{{ entry.updated_label }}</span>
+                    <span class="badge {% if entry.status == 'active' %}accent{% elif entry.status == 'archived' %}warning{% endif %} small">
+                      {{ entry.status_label }}
+                    </span>
+                  </div>
+                </summary>
+                <form action="/wishlist/{{ entry.id }}/update" method="post" class="stack-form">
+                  <div class="form-grid">
+                    <label>
+                      <span>Soda name</span>
+                      <input type="text" name="soda_name" value="{{ entry.soda_name }}" required>
+                    </label>
+                    <label>
+                      <span>Brand</span>
+                      <input type="text" name="brand" value="{{ entry.brand }}">
+                    </label>
+                    <label>
+                      <span>Country</span>
+                      <input type="text" name="country" value="{{ entry.country }}">
+                    </label>
+                    <label>
+                      <span>Category</span>
+                      <input type="text" name="category" value="{{ entry.category }}">
+                    </label>
+                    <label>
+                      <span>Priority</span>
+                      <select name="priority">
+                        {% for value in range(1, 6) %}
+                          <option value="{{ value }}" {% if entry.priority == value %}selected{% endif %}>{{ value }}/5</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Status</span>
+                      <select name="status">
+                        <option value="active" {% if entry.status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="found" {% if entry.status == 'found' %}selected{% endif %}>Found</option>
+                        <option value="archived" {% if entry.status == 'archived' %}selected{% endif %}>Archived</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label>
+                    <span>Notes</span>
+                    <textarea name="notes" rows="3">{{ entry.notes }}</textarea>
+                  </label>
+                  <div class="button-row">
+                    <button type="submit" class="button secondary">Save wishlist entry</button>
+                  </div>
+                </form>
+                <form action="/wishlist/{{ entry.id }}/delete" method="post" class="inline-form delete-form">
+                  <button type="submit" class="button danger">Delete entry</button>
+                </form>
+              </details>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="empty-copy">No wishlist entries yet.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <div class="column-side">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Manual add</p>
+            <h2>Add a soda to chase down</h2>
+          </div>
+        </div>
+        <form action="/wishlist/add" method="post" class="stack-form">
+          <label>
+            <span>Soda name</span>
+            <input type="text" name="soda_name" placeholder="Beverly, Green River, regional oddity" required>
+          </label>
+          <label>
+            <span>Brand</span>
+            <input type="text" name="brand" placeholder="Optional">
+          </label>
+          <div class="form-grid">
+            <label>
+              <span>Country</span>
+              <input type="text" name="country" placeholder="Optional">
+            </label>
+            <label>
+              <span>Category</span>
+              <input type="text" name="category" placeholder="Cola, fruit, tonic, cream soda">
+            </label>
+            <label>
+              <span>Priority</span>
+              <select name="priority">
+                <option value="5">5/5</option>
+                <option value="4">4/5</option>
+                <option value="3" selected>3/5</option>
+                <option value="2">2/5</option>
+                <option value="1">1/5</option>
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select name="status">
+                <option value="active" selected>Active</option>
+                <option value="found">Found</option>
+                <option value="archived">Archived</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            <span>Notes</span>
+            <textarea name="notes" rows="4" placeholder="Why you want it, where it might be, or who told you about it"></textarea>
+          </label>
+          <button type="submit" class="button">Add to wishlist</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Quick paths</p>
+            <h2>Fill it from the app</h2>
+          </div>
+        </div>
+        <ul class="note-list">
+          <li>Add catalog entries from the Catalog page when something is out of stock or worth restocking.</li>
+          <li>Add passport entries when a travel soda was good enough to hunt down again.</li>
+          <li>Mark items as “Found” instead of deleting them so the list keeps some memory.</li>
+        </ul>
+      </section>
+    </div>
+  </section>
+{% endblock %}

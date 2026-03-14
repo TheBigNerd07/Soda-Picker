@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Login | Soda Picker{% endblock %}
+{% block content %}
+  <section class="login-shell">
+    <article class="panel login-panel">
+      <p class="eyebrow">Access control</p>
+      <h1>Sign in to unlock Soda Picker.</h1>
+      <p class="lede">
+        This app is running in <strong>{{ access_control_mode_label }}</strong> mode. Use the configured app credentials to keep editing, logging, and exports private.
+      </p>
+      {% if flash_message %}
+        <section class="flash panel">
+          <strong>Saved.</strong> {{ flash_message }}
+        </section>
+      {% endif %}
+      {% if login_error %}
+        <section class="flash panel auth-error">
+          <strong>Denied.</strong> {{ login_error }}
+        </section>
+      {% endif %}
+      <form action="/login" method="post" class="stack-form auth-form">
+        <input type="hidden" name="next" value="{{ next_path }}">
+        <label>
+          <span>Username</span>
+          <input type="text" name="username" autocomplete="username" required>
+        </label>
+        <label>
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="button">Log in</button>
+      </form>
+    </article>
+  </section>
+{% endblock %}
