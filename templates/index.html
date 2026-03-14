@@ -1,155 +1,247 @@
 {% extends "base.html" %}
 {% block title %}Dashboard | Soda Picker{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
 {% block content %}
-  <section class="hero panel">
-    <div>
-      <p class="eyebrow">Smart soda roulette</p>
-      <h1>Pick the right fizz for this exact moment.</h1>
-      <p class="lede">
-        Soda Picker now weighs stock status, favorites, dislikes, temporary bans, repeat avoidance,
-        weekday vs weekend rules, and late-day caffeine pressure before it hands you a pour.
-      </p>
-      {% if can_write %}
-        <form action="/pick" method="post" class="picker-form">
-          <label class="toggle">
-            <input type="checkbox" name="chaos_mode" value="true" {% if chaos_mode %}checked{% endif %}>
-            <span>Treat mode</span>
-          </label>
-          <button type="submit" class="button">Pick my soda</button>
-        </form>
-        <p class="helper-text">
-          Treat mode shakes the weights a bit, but it still respects the hard timing and caffeine guardrails.
-        </p>
-      {% else %}
-        <div class="mini-panel top-gap">
-          <p class="mini-panel-title">Pick mode is locked right now.</p>
-          <p class="helper-text">Sign in to generate recommendations and save the history that powers repeat avoidance.</p>
-          <a class="button" href="{{ access_login_url }}">Log in to pick</a>
-        </div>
-      {% endif %}
-    </div>
-    <div class="hero-stats">
-      <article class="stat-card spotlight">
-        <p class="stat-label">Current local time</p>
-        <p
-          id="clock"
-          class="stat-value clock"
-          data-iso="{{ local_now_iso }}"
-          data-timezone="{{ settings.timezone_name }}"
-        >
-          {{ local_now_label }}
-        </p>
-        <p class="stat-note">{{ settings.timezone_name }} · {{ rules.rules_label }}</p>
-      </article>
-      <article class="stat-card">
-        <p class="stat-label">Today's caffeine</p>
-        <p class="stat-value">{{ daily_total|number }} mg</p>
-        <p class="stat-note">Limit today: {{ rules.daily_caffeine_limit_mg }} mg</p>
-      </article>
-      <article class="stat-card">
-        <p class="stat-label">Inventory ready</p>
-        <p class="stat-value">{{ available_count }}</p>
-        <p class="stat-note">{{ favorite_count }} favorites currently available</p>
-      </article>
-      <article class="stat-card">
-        <p class="stat-label">Passport</p>
-        <p class="stat-value">{{ passport_summary.unique_sodas }}</p>
-        <p class="stat-note">{{ passport_summary.countries_count }} countries tracked</p>
-      </article>
-    </div>
-  </section>
-
   {% if flash_message %}
     <section class="flash panel">
       <strong>Saved.</strong> {{ flash_message }}
     </section>
   {% endif %}
 
+  <section class="dashboard-hero">
+    <article class="panel hero-card">
+      <div class="hero-copy">
+        <p class="eyebrow">Smart soda roulette</p>
+        <h1>Pick the right fizz for this exact moment.</h1>
+        <p class="lede">
+          Soda Picker weighs stock status, favorites, dislikes, temporary bans, repeat avoidance,
+          day rules, and caffeine pressure before it hands you a can.
+        </p>
+      </div>
+      <div class="overview-strip">
+        <article class="stat-chip">
+          <span class="stat-label">Rule set</span>
+          <strong class="stat-chip-value">{{ rules.rules_label }}</strong>
+          <span class="stat-note">Cutoff {{ rules.effective_cutoff_display }}</span>
+        </article>
+        <article class="stat-chip">
+          <span class="stat-label">Inventory ready</span>
+          <strong class="stat-chip-value">{{ available_count }}</strong>
+          <span class="stat-note">{{ favorite_count }} favorites available</span>
+        </article>
+        <article class="stat-chip">
+          <span class="stat-label">Passport</span>
+          <strong class="stat-chip-value">{{ passport_summary.unique_sodas }}</strong>
+          <span class="stat-note">{{ passport_summary.countries_count }} countries tracked</span>
+        </article>
+      </div>
+    </article>
+
+    <article class="panel picker-stage">
+      {% if can_write %}
+        <form action="/pick" method="post" class="picker-stage-form">
+          <div class="picker-stage-top">
+            <label class="toggle">
+              <input type="checkbox" name="chaos_mode" value="true" {% if chaos_mode %}checked{% endif %}>
+              <span>Treat mode</span>
+            </label>
+            <p class="helper-text">
+              Treat mode loosens the weighting, but it still respects hard timing and caffeine guardrails.
+            </p>
+          </div>
+          <button type="submit" class="button picker-button">
+            <span class="mini-can button-can" aria-hidden="true"></span>
+            <span class="picker-button-label">Pick My Soda</span>
+          </button>
+        </form>
+      {% else %}
+        <div class="picker-stage-locked">
+          <div>
+            <p class="eyebrow">Read-only right now</p>
+            <h2>Picking is locked until you sign in.</h2>
+            <p class="helper-text">
+              Log in to generate recommendations and save the history that powers repeat avoidance.
+            </p>
+          </div>
+          <a class="button" href="{{ access_login_url }}">Log in to pick</a>
+        </div>
+      {% endif %}
+    </article>
+  </section>
+
   <section class="dashboard-grid">
     <div class="column-main">
-      <article class="panel recommendation-card status-{{ recommendation.status if recommendation else 'idle' }}">
-        {% if recommendation and recommendation.soda %}
-          <p class="eyebrow">Recommendation</p>
-          <h2>{{ recommendation.soda.soda.name }}</h2>
-          <p class="brand-line">{{ recommendation.soda.soda.brand or "House bubbles" }}</p>
-          <div class="badge-row">
-            {% for badge in recommendation.soda.soda.badge_labels %}
-              <span class="badge">{{ badge }}</span>
-            {% endfor %}
-            {% if recommendation.soda.state.preference == 'favorite' %}
-              <span class="badge accent">Favorite</span>
-            {% elif recommendation.soda.state.preference == 'dislike' %}
-              <span class="badge warning">Disliked</span>
+      <article class="panel recommendation-showcase status-{{ recommendation.status if recommendation else 'idle' }}">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Recommendation</p>
+            {% if recommendation and recommendation.soda %}
+              <h2>{{ recommendation.soda.soda.display_name }}</h2>
+            {% elif recommendation %}
+              <h2>{{ recommendation.headline }}</h2>
+            {% else %}
+              <h2>Waiting for your first spin.</h2>
             {% endif %}
-            {% for tag in recommendation.soda.soda.tags[:3] %}
-              <span class="badge accent">{{ tag }}</span>
-            {% endfor %}
           </div>
-          <div class="metric-row">
-            <div class="metric-pill">
-              <span>Caffeine</span>
-              <strong>{{ recommendation.soda.soda.caffeine_mg|number }} mg</strong>
-            </div>
-            <div class="metric-pill">
-              <span>Projected total</span>
-              <strong>{{ recommendation.projected_total_mg|number }} mg</strong>
-            </div>
-            <div class="metric-pill">
-              <span>Budget after pick</span>
-              <strong>{{ recommendation.remaining_budget_mg|number }} mg</strong>
-            </div>
-          </div>
-          <p class="reason">{{ recommendation.reason }}</p>
-          <p class="helper-text">{{ recommendation.rules_summary }}</p>
-          {% if recommendation.rejected_options %}
-            <div class="mini-panel">
-              <p class="mini-panel-title">Why not the others?</p>
-              <ul class="note-list">
-                {% for rejected in recommendation.rejected_options %}
-                  <li><strong>{{ rejected.soda_name }}</strong> {{ rejected.reason }}</li>
-                {% endfor %}
-              </ul>
-            </div>
+          {% if recommendation and recommendation.soda %}
+            <span class="badge accent">Ready to pour</span>
+          {% elif recommendation %}
+            <span class="badge warning">{{ recommendation.status|title }}</span>
           {% endif %}
-          {% if can_write %}
-            <form action="/log-consumption" method="post" class="log-form">
-              <input type="hidden" name="soda_id" value="{{ recommendation.soda.id }}">
-              <input type="hidden" name="reason" value="{{ recommendation.reason }}">
-              <input type="hidden" name="recommendation_id" value="{{ recommendation_id }}">
-              {% if chaos_mode %}
-                <input type="hidden" name="chaos_mode" value="true">
+        </div>
+
+        {% if recommendation and recommendation.soda %}
+          {% set can_tone = 'tone-citrus' %}
+          {% if recommendation.soda.soda.caffeine_mg >= 35 %}
+            {% set can_tone = 'tone-cola' %}
+          {% elif recommendation.soda.soda.caffeine_mg <= 0 %}
+            {% set can_tone = 'tone-clear' %}
+          {% endif %}
+          <div class="recommendation-layout">
+            <div class="art-stage">
+              <div class="soda-illustration">
+                <span class="bubble bubble-one"></span>
+                <span class="bubble bubble-two"></span>
+                <span class="bubble bubble-three"></span>
+                <div class="soda-can {{ can_tone }}">
+                  <span class="soda-can-brand">{{ recommendation.soda.soda.brand or "Soda Picker" }}</span>
+                  <span class="soda-can-name">{{ recommendation.soda.soda.name }}</span>
+                </div>
+              </div>
+            </div>
+            <div class="recommendation-copy">
+              <div class="badge-row">
+                <span class="badge tone-cola">{{ recommendation.soda.soda.category }}</span>
+                <span class="badge tone-mint">{{ recommendation.soda.soda.caffeine_label }}</span>
+                {% if recommendation.soda.soda.sugar_g is not none %}
+                  <span class="badge tone-peach">{{ recommendation.soda.soda.sugar_g|number }} g sugar</span>
+                {% endif %}
+                {% if recommendation.soda.state.preference == 'favorite' %}
+                  <span class="badge accent">Favorite</span>
+                {% elif recommendation.soda.state.preference == 'dislike' %}
+                  <span class="badge warning">Disliked</span>
+                {% endif %}
+                {% for tag in recommendation.soda.soda.tags[:2] %}
+                  <span class="badge">{{ tag }}</span>
+                {% endfor %}
+              </div>
+
+              <dl class="feature-list">
+                <div>
+                  <dt>Caffeine</dt>
+                  <dd>{{ recommendation.soda.soda.caffeine_mg|number }} mg</dd>
+                </div>
+                <div>
+                  <dt>Sugar</dt>
+                  <dd>
+                    {% if recommendation.soda.soda.sugar_g is not none %}
+                      {{ recommendation.soda.soda.sugar_g|number }} g
+                    {% else %}
+                      n/a
+                    {% endif %}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Projected total</dt>
+                  <dd>{{ recommendation.projected_total_mg|number }} mg</dd>
+                </div>
+                <div>
+                  <dt>Budget left</dt>
+                  <dd>{{ recommendation.remaining_budget_mg|number }} mg</dd>
+                </div>
+              </dl>
+
+              <p class="reason lead-reason">{{ recommendation.reason }}</p>
+              <p class="helper-text">{{ recommendation.rules_summary }}</p>
+
+              {% if recommendation.rejected_options %}
+                <div class="mini-panel">
+                  <p class="mini-panel-title">Why not the others?</p>
+                  <ul class="note-list">
+                    {% for rejected in recommendation.rejected_options[:4] %}
+                      <li><strong>{{ rejected.soda_name }}</strong> {{ rejected.reason }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
               {% endif %}
-              <button type="submit" class="button">Yep, I drank this</button>
-            </form>
-          {% else %}
-            <p class="helper-text">Sign in to log the drink if you actually crack it open.</p>
-          {% endif %}
-        {% elif recommendation %}
-          <p class="eyebrow">Recommendation</p>
-          <h2>{{ recommendation.headline }}</h2>
-          <p class="reason">{{ recommendation.reason }}</p>
-          <p class="helper-text">{{ recommendation.rules_summary }}</p>
-          {% if recommendation.rejected_options %}
-            <div class="mini-panel">
-              <p class="mini-panel-title">What blocked things?</p>
-              <ul class="note-list">
-                {% for rejected in recommendation.rejected_options %}
-                  <li><strong>{{ rejected.soda_name }}</strong> {{ rejected.reason }}</li>
-                {% endfor %}
-              </ul>
             </div>
-          {% endif %}
+          </div>
+
+          <div class="recommendation-actions">
+            {% if can_write %}
+              <form action="/pick" method="post" class="inline-form">
+                {% if chaos_mode %}
+                  <input type="hidden" name="chaos_mode" value="true">
+                {% endif %}
+                <button type="submit" class="button secondary">Reroll</button>
+              </form>
+              <form action="/log-consumption" method="post" class="inline-form log-form">
+                <input type="hidden" name="soda_id" value="{{ recommendation.soda.id }}">
+                <input type="hidden" name="reason" value="{{ recommendation.reason }}">
+                <input type="hidden" name="recommendation_id" value="{{ recommendation_id }}">
+                {% if chaos_mode %}
+                  <input type="hidden" name="chaos_mode" value="true">
+                {% endif %}
+                <button type="submit" class="button success">Log Drink</button>
+              </form>
+            {% else %}
+              <a class="button tertiary" href="{{ access_login_url }}">Log in to save this pick</a>
+            {% endif %}
+          </div>
+        {% elif recommendation %}
+          <div class="recommendation-layout recommendation-empty">
+            <div class="art-stage">
+              <div class="soda-illustration">
+                <div class="soda-can tone-clear">
+                  <span class="soda-can-brand">Soda Picker</span>
+                  <span class="soda-can-name">Hold Up</span>
+                </div>
+              </div>
+            </div>
+            <div class="recommendation-copy">
+              <p class="reason lead-reason">{{ recommendation.reason }}</p>
+              <p class="helper-text">{{ recommendation.rules_summary }}</p>
+              {% if recommendation.rejected_options %}
+                <div class="mini-panel">
+                  <p class="mini-panel-title">What blocked things?</p>
+                  <ul class="note-list">
+                    {% for rejected in recommendation.rejected_options[:5] %}
+                      <li><strong>{{ rejected.soda_name }}</strong> {{ rejected.reason }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+            </div>
+          </div>
         {% else %}
-          <p class="eyebrow">Recommendation</p>
-          <h2>Press the button and let the rules work.</h2>
-          <p class="reason">
-            The picker now looks at the live clock, your caffeine budget, stock status, favorites,
-            dislikes, temporary bans, and no-repeat history before it commits.
-          </p>
+          <div class="recommendation-layout recommendation-empty">
+            <div class="art-stage">
+              <div class="soda-illustration">
+                <div class="soda-can tone-citrus">
+                  <span class="soda-can-brand">Soda Picker</span>
+                  <span class="soda-can-name">Pick</span>
+                </div>
+              </div>
+            </div>
+            <div class="recommendation-copy">
+              <div class="badge-row">
+                <span class="badge tone-mint">{{ rules.rules_label }}</span>
+                <span class="badge">{{ available_count }} in stock</span>
+                <span class="badge">{{ daily_total|number }} mg today</span>
+              </div>
+              <p class="reason lead-reason">
+                Press the button and the picker will look at the live clock, your caffeine budget, stock status,
+                favorites, dislikes, and no-repeat history before it commits.
+              </p>
+              <p class="helper-text">
+                Once you spin it, this card will explain why the winning soda made sense and what got filtered out.
+              </p>
+            </div>
+          </div>
         {% endif %}
       </article>
 
-      <section class="panel">
+      <section class="panel list-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Today’s log</p>
@@ -182,7 +274,7 @@
         {% endif %}
       </section>
 
-      <section class="panel">
+      <section class="panel list-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Recommendation history</p>
@@ -213,11 +305,99 @@
           <p class="empty-copy">No recommendation history yet.</p>
         {% endif %}
       </section>
+    </div>
+
+    <div class="column-side">
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Live rules</p>
+            <h3>Current timing profile</h3>
+          </div>
+        </div>
+        <dl class="detail-list">
+          <div>
+            <dt>Rule set</dt>
+            <dd>{{ rules.rules_label }}</dd>
+          </div>
+          <div>
+            <dt>No soda before</dt>
+            <dd>{{ rules.no_soda_before_display }}</dd>
+          </div>
+          <div>
+            <dt>Effective caffeine squeeze</dt>
+            <dd>{{ rules.effective_cutoff_display }}</dd>
+          </div>
+          <div>
+            <dt>Bedtime</dt>
+            <dd>{{ rules.bedtime_display }}</dd>
+          </div>
+          <div>
+            <dt>No-repeat window</dt>
+            <dd>{{ rules.duplicate_lookback }} picks</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="panel reminder-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Reminders</p>
+            <h3>Desktop reminder support</h3>
+          </div>
+        </div>
+        <div
+          id="reminder-config"
+          data-enabled="{{ 'true' if rules.reminder_enabled else 'false' }}"
+          data-reminder-time="{{ rules.reminder_time.strftime('%H:%M') }}"
+          data-timezone="{{ settings.timezone_name }}"
+        ></div>
+        <p class="empty-copy">
+          Reminder time: {{ rules.reminder_time_display }}.
+          Browser notifications work when this page is open; the calendar export works everywhere else.
+        </p>
+        <div class="action-grid top-gap">
+          <button id="notification-permission" type="button" class="button secondary">Enable browser reminder</button>
+          <a class="button tertiary" href="/exports/reminder.ics">Download calendar reminder</a>
+        </div>
+      </section>
 
       <section class="panel">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Soda passport</p>
+            <p class="eyebrow">Quick add</p>
+            <h3>Manual caffeine entry</h3>
+          </div>
+        </div>
+        {% if can_write %}
+          <form action="/manual-entry" method="post" class="stack-form">
+            <label>
+              <span>Drink name</span>
+              <input type="text" name="name" placeholder="Coffee, tea, mystery can" required>
+            </label>
+            <label>
+              <span>Caffeine (mg)</span>
+              <input type="number" min="0" step="1" name="caffeine_mg" placeholder="95" required>
+            </label>
+            <label>
+              <span>When</span>
+              <input type="datetime-local" name="consumed_at_local" value="{{ manual_entry_time }}">
+            </label>
+            <label>
+              <span>Notes</span>
+              <textarea name="notes" rows="3" placeholder="Optional note"></textarea>
+            </label>
+            <button type="submit" class="button secondary">Log manual caffeine</button>
+          </form>
+        {% else %}
+          <p class="empty-copy">Manual logging unlocks after you sign in.</p>
+        {% endif %}
+      </section>
+
+      <section class="panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Passport</p>
             <h3>World sodas you have tried</h3>
           </div>
           <a class="text-link" href="/passport">Open passport</a>
@@ -268,7 +448,7 @@
                 </div>
                 <div class="history-meta">
                   <span>{{ entry.updated_label }}</span>
-                  <span class="badge {% if entry.status == 'active' %}accent{% elif entry.status == 'found' %}{% else %}warning{% endif %} small">
+                  <span class="badge {% if entry.status == 'active' %}accent{% elif entry.status == 'archived' %}warning{% endif %} small">
                     {{ entry.status_label }}
                   </span>
                 </div>
@@ -278,132 +458,6 @@
         {% else %}
           <p class="empty-copy">No wishlist entries yet.</p>
         {% endif %}
-      </section>
-    </div>
-
-    <div class="column-side">
-      <section class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Quick add</p>
-            <h3>Manual caffeine entry</h3>
-          </div>
-        </div>
-        {% if can_write %}
-          <form action="/manual-entry" method="post" class="stack-form">
-            <label>
-              <span>Drink name</span>
-              <input type="text" name="name" placeholder="Coffee, tea, mystery can" required>
-            </label>
-            <label>
-              <span>Caffeine (mg)</span>
-              <input type="number" min="0" step="1" name="caffeine_mg" placeholder="95" required>
-            </label>
-            <label>
-              <span>When</span>
-              <input type="datetime-local" name="consumed_at_local" value="{{ manual_entry_time }}">
-            </label>
-            <label>
-              <span>Notes</span>
-              <textarea name="notes" rows="3" placeholder="Optional note"></textarea>
-            </label>
-            <button type="submit" class="button secondary">Log manual caffeine</button>
-          </form>
-        {% else %}
-          <p class="empty-copy">Manual logging unlocks after you sign in.</p>
-        {% endif %}
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Quick passport add</p>
-            <h3>Track a soda from anywhere</h3>
-          </div>
-        </div>
-        {% if can_write %}
-          <form action="/passport/add" method="post" class="stack-form">
-            <label>
-              <span>Soda name</span>
-              <input type="text" name="soda_name" placeholder="Irn-Bru, Inca Kola, etc." required>
-            </label>
-            <label>
-              <span>Brand</span>
-              <input type="text" name="brand" placeholder="Optional">
-            </label>
-            <div class="form-grid">
-              <label>
-                <span>Country</span>
-                <input type="text" name="country" placeholder="Japan">
-              </label>
-              <label>
-                <span>Tried on</span>
-                <input type="date" name="tried_on" value="{{ passport_entry_date }}">
-              </label>
-            </div>
-            <label>
-              <span>Where you had it</span>
-              <input type="text" name="where_tried" placeholder="Tokyo convenience store">
-            </label>
-            <button type="submit" class="button secondary">Add to passport</button>
-          </form>
-        {% else %}
-          <p class="empty-copy">Passport updates are locked until you sign in.</p>
-        {% endif %}
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Live rules</p>
-            <h3>Current timing profile</h3>
-          </div>
-        </div>
-        <dl class="detail-list">
-          <div>
-            <dt>Rule set</dt>
-            <dd>{{ rules.rules_label }}</dd>
-          </div>
-          <div>
-            <dt>No soda before</dt>
-            <dd>{{ rules.no_soda_before_display }}</dd>
-          </div>
-          <div>
-            <dt>Effective caffeine squeeze</dt>
-            <dd>{{ rules.effective_cutoff_display }}</dd>
-          </div>
-          <div>
-            <dt>Bedtime</dt>
-            <dd>{{ rules.bedtime_display }}</dd>
-          </div>
-          <div>
-            <dt>No-repeat window</dt>
-            <dd>{{ rules.duplicate_lookback }} picks</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Reminders</p>
-            <h3>Desktop reminder support</h3>
-          </div>
-        </div>
-        <div
-          id="reminder-config"
-          data-enabled="{{ 'true' if rules.reminder_enabled else 'false' }}"
-          data-reminder-time="{{ rules.reminder_time.strftime('%H:%M') }}"
-          data-timezone="{{ settings.timezone_name }}"
-        ></div>
-        <p class="empty-copy">
-          Reminder time: {{ rules.reminder_time_display }}.
-          Browser notifications work when this page is open; the calendar export works everywhere else.
-        </p>
-        <div class="button-row">
-          <button id="notification-permission" type="button" class="button secondary">Enable browser reminder</button>
-          <a class="button tertiary" href="/exports/reminder.ics">Download calendar reminder</a>
-        </div>
       </section>
     </div>
   </section>
