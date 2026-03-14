@@ -8,6 +8,11 @@
       These runtime overrides now save per account, while host, Docker, access-control bootstrap,
       proxy, and file-path settings remain environment-backed.
     </p>
+    {% if is_admin %}
+      <div class="button-row top-gap">
+        <a class="button tertiary" href="#user-accounts">Add or manage users</a>
+      </div>
+    {% endif %}
   </section>
 
   {% if flash_message %}
@@ -203,7 +208,7 @@
   </section>
 
   {% if is_admin %}
-    <section class="panel top-gap">
+    <section class="panel top-gap" id="user-accounts">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Admin only</p>
@@ -213,6 +218,35 @@
       <p class="helper-text">
         {{ managed_user_count }} login account{{ "" if managed_user_count == 1 else "s" }} total, {{ managed_admin_count }} admin{{ "" if managed_admin_count == 1 else "s" }}.
       </p>
+
+      <article class="panel top-gap">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">New account</p>
+            <h3>Add a user</h3>
+          </div>
+        </div>
+        <form action="/admin/users/create" method="post" class="stack-form">
+          <div class="form-grid">
+            <label>
+              <span>Username</span>
+              <input type="text" name="username" autocomplete="off" required>
+            </label>
+            <label>
+              <span>Password</span>
+              <input type="password" name="password" autocomplete="new-password" required>
+            </label>
+          </div>
+          <input type="hidden" name="is_admin" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="is_admin" value="true">
+            <span>Create as admin</span>
+          </label>
+          <div class="button-row">
+            <button type="submit" class="button">Create account</button>
+          </div>
+        </form>
+      </article>
 
       {% if managed_users %}
         <div class="settings-grid top-gap">
@@ -250,35 +284,6 @@
       {% else %}
         <p class="empty-copy top-gap">No login accounts yet.</p>
       {% endif %}
-
-      <article class="panel top-gap">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">New account</p>
-            <h3>Create another user</h3>
-          </div>
-        </div>
-        <form action="/admin/users/create" method="post" class="stack-form">
-          <div class="form-grid">
-            <label>
-              <span>Username</span>
-              <input type="text" name="username" autocomplete="off" required>
-            </label>
-            <label>
-              <span>Password</span>
-              <input type="password" name="password" autocomplete="new-password" required>
-            </label>
-          </div>
-          <input type="hidden" name="is_admin" value="false">
-          <label class="inline-check">
-            <input type="checkbox" name="is_admin" value="true">
-            <span>Create as admin</span>
-          </label>
-          <div class="button-row">
-            <button type="submit" class="button">Create account</button>
-          </div>
-        </form>
-      </article>
     </section>
   {% endif %}
 {% endblock %}
