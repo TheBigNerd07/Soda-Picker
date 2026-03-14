@@ -69,6 +69,17 @@ templates.env.filters["yes_no"] = _yes_no
 templates.env.filters["calendar_date"] = format_calendar_date
 
 
+def _asset_version(path: str) -> str:
+    asset_path = Path("static") / path.lstrip("/")
+    try:
+        return str(asset_path.stat().st_mtime_ns)
+    except OSError:
+        return "0"
+
+
+templates.env.globals["asset_version"] = _asset_version
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.initialize(base_settings)
