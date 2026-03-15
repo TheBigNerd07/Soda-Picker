@@ -1,18 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Settings | Soda Picker{% endblock %}
+{% block body_class %}settings-page{% endblock %}
 {% block content %}
   <section class="panel page-header">
-    <p class="eyebrow">Settings</p>
-    <h1>Persisted runtime rules and admin controls.</h1>
-    <p class="lede">
-      These runtime overrides now save per account, while host, Docker, access-control bootstrap,
-      proxy, and file-path settings remain environment-backed.
-    </p>
-    {% if is_admin %}
-      <div class="button-row top-gap">
-        <a class="button tertiary" href="#user-accounts">Add or manage users</a>
+    <div class="page-header-layout">
+      <div>
+        <p class="eyebrow">Settings</p>
+        <h1>Control daily rules, exports, and access.</h1>
+        <p class="lede">
+          Personal runtime overrides save to your account. Environment-backed values still control hosting, secrets, and bootstrap access.
+        </p>
       </div>
-    {% endif %}
+      <div class="page-header-actions">
+        <a class="button tertiary" href="#exports">Exports and backups</a>
+        {% if is_admin %}
+          <a class="button secondary" href="#user-accounts">Manage users</a>
+        {% endif %}
+      </div>
+    </div>
   </section>
 
   {% if flash_message %}
@@ -22,7 +27,7 @@
   {% endif %}
 
   <section class="settings-grid">
-    <article class="panel">
+    <article class="panel settings-form-panel">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Runtime overrides</p>
@@ -97,13 +102,16 @@
       </form>
     </article>
 
-    <article class="panel">
+    <article class="panel settings-values-panel">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Current values</p>
           <h2>Live configuration map</h2>
         </div>
       </div>
+      <p class="helper-text settings-values-note">
+        Environment-backed values stay read-only here so you can verify what the container is actually using.
+      </p>
       <dl class="detail-list large">
         {% for key, value, source in settings_items %}
           <div>
@@ -120,7 +128,7 @@
 
   <section class="dashboard-grid">
     <div class="column-main">
-      <section class="panel exports-panel">
+      <section class="panel exports-panel" id="exports">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Exports and backups</p>
@@ -153,7 +161,7 @@
     </div>
 
     <div class="column-side">
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Access control</p>
@@ -179,7 +187,7 @@
         </p>
       </section>
 
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Backup list</p>
@@ -208,18 +216,22 @@
   </section>
 
   {% if is_admin %}
-    <section class="panel top-gap" id="user-accounts">
+    <section class="panel content-panel top-gap" id="user-accounts">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Admin only</p>
           <h2>User accounts</h2>
+        </div>
+        <div class="account-summary">
+          <span class="badge accent">{{ managed_user_count }} account{{ "" if managed_user_count == 1 else "s" }}</span>
+          <span class="badge">{{ managed_admin_count }} admin{{ "" if managed_admin_count == 1 else "s" }}</span>
         </div>
       </div>
       <p class="helper-text">
         {{ managed_user_count }} login account{{ "" if managed_user_count == 1 else "s" }} total, {{ managed_admin_count }} admin{{ "" if managed_admin_count == 1 else "s" }}.
       </p>
 
-      <article class="panel top-gap">
+      <article class="panel content-panel panel-inset top-gap">
         <div class="section-heading">
           <div>
             <p class="eyebrow">New account</p>
@@ -251,7 +263,7 @@
       {% if managed_users %}
         <div class="account-grid top-gap">
           {% for managed_user in managed_users %}
-            <article class="panel">
+            <article class="panel content-panel">
               <div class="section-heading">
                 <div>
                   <p class="eyebrow">{{ managed_user.role_label }}</p>

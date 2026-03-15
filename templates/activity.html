@@ -1,12 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Activity | Soda Picker{% endblock %}
+{% block body_class %}activity-page{% endblock %}
 {% block content %}
   <section class="panel page-header">
-    <p class="eyebrow">Activity</p>
-    <h1>Logs, edits, and recommendation history.</h1>
-    <p class="lede">
-      This page is where you fix mistakes, add non-soda caffeine, and export the history that feeds the recommendation engine.
-    </p>
+    <div class="page-header-layout">
+      <div>
+        <p class="eyebrow">Activity</p>
+        <h1>Fix logs and review recent picks.</h1>
+        <p class="lede">
+          Use this screen to correct entries, add coffee or tea, and export the history that drives repeat avoidance.
+        </p>
+      </div>
+      <div class="page-header-actions">
+        <a class="button tertiary" href="/exports/consumption.csv">Consumption CSV</a>
+        <a class="button tertiary" href="/exports/recommendations.csv">Recommendations CSV</a>
+      </div>
+    </div>
   </section>
 
   {% if flash_message %}
@@ -35,7 +44,7 @@
 
   <section class="dashboard-grid">
     <div class="column-main">
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Editable log</p>
@@ -100,7 +109,7 @@
         {% endif %}
       </section>
 
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Recommendation history</p>
@@ -135,7 +144,7 @@
     </div>
 
     <div class="column-side">
-      <section class="panel">
+      <section class="panel sticky-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Manual entry</p>
@@ -163,17 +172,19 @@
         </form>
       </section>
 
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Backup and export</p>
             <h2>Get your data out</h2>
           </div>
         </div>
-        <div class="stack-links">
+        <div class="stack-links support-list">
           <a class="text-link" href="/exports/consumption.csv">Consumption log CSV</a>
           <a class="text-link" href="/exports/recommendations.csv">Recommendation history CSV</a>
-          <a class="text-link" href="/exports/database.sqlite">Database backup download</a>
+          {% if is_admin %}
+            <a class="text-link" href="/exports/database.sqlite">Database backup download</a>
+          {% endif %}
         </div>
       </section>
     </div>

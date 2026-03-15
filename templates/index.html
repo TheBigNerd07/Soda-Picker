@@ -316,7 +316,7 @@
     </div>
 
     <div class="column-side">
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Live rules</p>
@@ -347,7 +347,7 @@
         </dl>
       </section>
 
-      <section class="panel reminder-panel">
+      <section class="panel content-panel reminder-panel side-card">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Reminders</p>
@@ -370,8 +370,8 @@
         </div>
       </section>
 
-      <section class="panel">
-        <div class="section-heading">
+      <section class="panel content-panel side-card">
+        <div class="side-card-header">
           <div>
             <p class="eyebrow">Quick add</p>
             <h3>Manual caffeine entry</h3>
@@ -402,13 +402,13 @@
         {% endif %}
       </section>
 
-      <section class="panel">
-        <div class="section-heading">
+      <section class="panel content-panel side-card">
+        <div class="side-card-header">
           <div>
             <p class="eyebrow">Passport</p>
             <h3>World sodas you have tried</h3>
           </div>
-          <a class="text-link" href="/passport">Open passport</a>
+          <a class="button tertiary small-button" href="/passport">Open passport</a>
         </div>
         {% if recent_passport_entries %}
           <ul class="history-list">
@@ -439,13 +439,13 @@
         {% endif %}
       </section>
 
-      <section class="panel">
-        <div class="section-heading">
+      <section class="panel content-panel side-card">
+        <div class="side-card-header">
           <div>
             <p class="eyebrow">Wishlist</p>
             <h3>Sodas to hunt down next</h3>
           </div>
-          <a class="text-link" href="/wishlist">Open wishlist</a>
+          <a class="button tertiary small-button" href="/wishlist">Open wishlist</a>
         </div>
         {% if recent_wishlist_entries %}
           <ul class="history-list">

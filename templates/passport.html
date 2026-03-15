@@ -1,13 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Passport | Soda Picker{% endblock %}
+{% block body_class %}passport-page{% endblock %}
 {% block content %}
   <section class="panel page-header">
-    <p class="eyebrow">Soda passport</p>
-    <h1>Track the sodas you have tried around the world.</h1>
-    <p class="lede">
-      This section is your personal world-soda log. It is separate from daily caffeine tracking,
-      so you can keep a long-term list of what you have had, where it came from, and whether you would drink it again.
-    </p>
+    <div class="page-header-layout">
+      <div>
+        <p class="eyebrow">Soda passport</p>
+        <h1>Keep a memory of every soda you try.</h1>
+        <p class="lede">
+          Your passport is separate from daily caffeine logging, so you can remember where a soda came from and whether it was worth another can.
+        </p>
+      </div>
+      <div class="page-header-actions">
+        <a class="button tertiary" href="/exports/passport.csv">Download passport CSV</a>
+        <a class="button secondary" href="#passport-add">Add an entry</a>
+      </div>
+    </div>
   </section>
 
   {% if flash_message %}
@@ -42,7 +50,7 @@
 
   <section class="dashboard-grid">
     <div class="column-main">
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Passport log</p>
@@ -145,7 +153,7 @@
     </div>
 
     <div class="column-side">
-      <section class="panel">
+      <section class="panel sticky-panel" id="passport-add">
         <div class="section-heading">
           <div>
             <p class="eyebrow">New passport entry</p>
@@ -208,14 +216,14 @@
         </form>
       </section>
 
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">What this is for</p>
             <h2>Long-term soda memory</h2>
           </div>
         </div>
-        <ul class="note-list">
+        <ul class="note-list support-list">
           <li>Track sodas that are not in your current local inventory.</li>
           <li>Keep origin and travel notes separate from daily caffeine logging.</li>
           <li>Use ratings and the “would try again” flag to remember what was actually good.</li>

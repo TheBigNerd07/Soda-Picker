@@ -1,12 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Wishlist | Soda Picker{% endblock %}
+{% block body_class %}wishlist-page{% endblock %}
 {% block content %}
   <section class="panel page-header">
-    <p class="eyebrow">Wishlist</p>
-    <h1>Keep tabs on the sodas you want to find next.</h1>
-    <p class="lede">
-      Use this list for hard-to-find favorites, world sodas you want again, and anything worth hunting down on future trips.
-    </p>
+    <div class="page-header-layout">
+      <div>
+        <p class="eyebrow">Wishlist</p>
+        <h1>Track the sodas worth hunting down next.</h1>
+        <p class="lede">
+          Save hard-to-find favorites, travel finds you want again, and anything worth tracking before your next restock or trip.
+        </p>
+      </div>
+      <div class="page-header-actions">
+        <a class="button tertiary" href="/exports/wishlist.csv">Download wishlist CSV</a>
+        <a class="button secondary" href="#wishlist-add">Add an entry</a>
+      </div>
+    </div>
   </section>
 
   {% if flash_message %}
@@ -35,7 +44,7 @@
 
   <section class="dashboard-grid">
     <div class="column-main">
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Wishlist log</p>
@@ -122,7 +131,7 @@
     </div>
 
     <div class="column-side">
-      <section class="panel">
+      <section class="panel sticky-panel" id="wishlist-add">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Manual add</p>
@@ -174,14 +183,14 @@
         </form>
       </section>
 
-      <section class="panel">
+      <section class="panel content-panel">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Quick paths</p>
             <h2>Fill it from the app</h2>
           </div>
         </div>
-        <ul class="note-list">
+        <ul class="note-list support-list">
           <li>Add catalog entries from the Catalog page when something is out of stock or worth restocking.</li>
           <li>Add passport entries when a travel soda was good enough to hunt down again.</li>
           <li>Mark items as “Found” instead of deleting them so the list keeps some memory.</li>

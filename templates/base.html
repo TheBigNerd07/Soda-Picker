@@ -6,7 +6,7 @@
     <title>{% block title %}Soda Picker{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}?v={{ asset_version('/style.css') }}">
     <script defer src="{{ url_for('static', path='/app.js') }}?v={{ asset_version('/app.js') }}"></script>
   </head>
@@ -38,7 +38,7 @@
             {% if daily_total is defined %}
               <p class="status-pill status-pill-wide">Daily caffeine: {{ daily_total|number }} mg</p>
             {% endif %}
-            <a class="status-pill action-pill" href="/catalog">Show top sodas</a>
+            <a class="status-pill action-pill" href="/catalog">Browse catalog</a>
             {% if access_control_enabled %}
               <span class="status-pill {% if is_authenticated %}accent{% else %}warning{% endif %}">
                 {{ access_control_mode_label }}
@@ -80,7 +80,9 @@
           <a class="button" href="{{ access_login_url }}">Log in to edit</a>
         </section>
       {% endif %}
-      {% block content %}{% endblock %}
+      <div class="page-stack">
+        {% block content %}{% endblock %}
+      </div>
     </main>
   </body>
 </html>
