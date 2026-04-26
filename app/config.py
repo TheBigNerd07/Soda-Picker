@@ -19,6 +19,8 @@ PERSISTABLE_SETTING_FIELDS = {
     "weekend_bedtime_hour",
     "latest_caffeine_hours_before_bed",
     "duplicate_lookback",
+    "allow_diet_sodas",
+    "allow_full_sugar_sodas",
     "chaos_mode_default",
     "reminder_enabled",
     "reminder_time",
@@ -83,6 +85,8 @@ class RuntimeRules:
     bedtime_hour: int
     latest_caffeine_hours_before_bed: int
     duplicate_lookback: int
+    allow_diet_sodas: bool
+    allow_full_sugar_sodas: bool
     reminder_enabled: bool
     reminder_time: time
     effective_caffeine_stop_hour: int
@@ -129,6 +133,8 @@ class Settings:
     weekend_bedtime_hour: int = 23
     latest_caffeine_hours_before_bed: int = 6
     duplicate_lookback: int = 4
+    allow_diet_sodas: bool = True
+    allow_full_sugar_sodas: bool = True
     csv_path: str = "/data/sample_sodas.csv"
     database_path: str = "/data/soda_picker.db"
     backup_dir: str = "/data/backups"
@@ -250,6 +256,8 @@ class Settings:
             bedtime_hour=bedtime_hour,
             latest_caffeine_hours_before_bed=self.latest_caffeine_hours_before_bed,
             duplicate_lookback=self.duplicate_lookback,
+            allow_diet_sodas=self.allow_diet_sodas,
+            allow_full_sugar_sodas=self.allow_full_sugar_sodas,
             reminder_enabled=self.reminder_enabled,
             reminder_time=self.reminder_time_value,
             effective_caffeine_stop_hour=effective_cutoff_hour,
@@ -262,7 +270,7 @@ class Settings:
                 continue
             if key in {"daily_caffeine_limit_mg", "weekend_daily_caffeine_limit_mg", "caffeine_cutoff_hour", "weekend_caffeine_cutoff_hour", "bedtime_hour", "weekend_bedtime_hour", "latest_caffeine_hours_before_bed", "duplicate_lookback"}:
                 values[key] = _int_or_default(raw_value, getattr(self, key))
-            elif key in {"chaos_mode_default", "reminder_enabled"}:
+            elif key in {"chaos_mode_default", "reminder_enabled", "allow_diet_sodas", "allow_full_sugar_sodas"}:
                 values[key] = parse_bool(raw_value, getattr(self, key))
             else:
                 values[key] = raw_value
@@ -305,6 +313,8 @@ class Settings:
             ("WEEKEND_BEDTIME_HOUR", str(self.weekend_bedtime_hour), "override" if "weekend_bedtime_hour" in override_keys else "env"),
             ("LATEST_CAFFEINE_HOURS_BEFORE_BED", str(self.latest_caffeine_hours_before_bed), "override" if "latest_caffeine_hours_before_bed" in override_keys else "env"),
             ("DUPLICATE_LOOKBACK", str(self.duplicate_lookback), "override" if "duplicate_lookback" in override_keys else "env"),
+            ("ALLOW_DIET_SODAS", "true" if self.allow_diet_sodas else "false", "override" if "allow_diet_sodas" in override_keys else "env"),
+            ("ALLOW_FULL_SUGAR_SODAS", "true" if self.allow_full_sugar_sodas else "false", "override" if "allow_full_sugar_sodas" in override_keys else "env"),
             ("CSV_PATH", self.csv_path, "env"),
             ("DATABASE_PATH", self.database_path, "env"),
             ("BACKUP_DIR", self.backup_dir, "env"),
@@ -326,7 +336,7 @@ class Settings:
 def normalize_override_payload(form_data: dict[str, str]) -> dict[str, str]:
     normalized: dict[str, str] = {}
     for key in PERSISTABLE_SETTING_FIELDS:
-        if key in {"chaos_mode_default", "reminder_enabled"}:
+        if key in {"chaos_mode_default", "reminder_enabled", "allow_diet_sodas", "allow_full_sugar_sodas"}:
             normalized[key] = "true" if parse_bool(form_data.get(key), False) else "false"
         else:
             normalized[key] = (form_data.get(key) or "").strip()

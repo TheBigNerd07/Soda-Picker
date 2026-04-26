@@ -9,63 +9,82 @@
   {% endif %}
 
   <section class="dashboard-hero">
-    <article class="panel hero-card">
-      <div class="hero-copy">
-        <p class="eyebrow">Smart soda roulette</p>
-        <h1>Pick the right fizz for this exact moment.</h1>
-        <p class="lede">
-          Soda Picker weighs stock status, favorites, dislikes, temporary bans, repeat avoidance,
-          day rules, and caffeine pressure before it hands you a can.
-        </p>
-      </div>
-      <div class="overview-strip">
-        <article class="stat-chip">
-          <span class="stat-label">Rule set</span>
-          <strong class="stat-chip-value">{{ rules.rules_label }}</strong>
-          <span class="stat-note">Cutoff {{ rules.effective_cutoff_display }}</span>
-        </article>
-        <article class="stat-chip">
-          <span class="stat-label">Inventory ready</span>
-          <strong class="stat-chip-value">{{ available_count }}</strong>
-          <span class="stat-note">{{ favorite_count }} favorites available</span>
-        </article>
-        <article class="stat-chip">
-          <span class="stat-label">Passport</span>
-          <strong class="stat-chip-value">{{ passport_summary.unique_sodas }}</strong>
-          <span class="stat-note">{{ passport_summary.countries_count }} countries tracked</span>
-        </article>
-      </div>
-    </article>
-
-    <article class="panel picker-stage">
-      {% if can_write %}
-        <form action="/pick" method="post" class="picker-stage-form">
-          <div class="picker-stage-top">
-            <label class="toggle">
-              <input type="checkbox" name="chaos_mode" value="true" {% if chaos_mode %}checked{% endif %}>
-              <span>Treat mode</span>
-            </label>
-            <p class="helper-text">
-              Treat mode loosens the weighting, but it still respects hard timing and caffeine guardrails.
+    <article class="panel hero-shell">
+      <div class="hero-shell-layout">
+        <div class="hero-main">
+          <div class="hero-copy">
+            <p class="eyebrow">Smart soda roulette</p>
+            <h1>Pick the right fizz for this exact moment.</h1>
+            <p class="lede">
+              Soda Picker weighs stock status, favorites, dislikes, temporary bans, repeat avoidance,
+              day rules, and caffeine pressure before it hands you a can.
             </p>
           </div>
-          <button type="submit" class="button picker-button">
-            <span class="mini-can button-can" aria-hidden="true"></span>
-            <span class="picker-button-label">Pick My Soda</span>
-          </button>
-        </form>
-      {% else %}
-        <div class="picker-stage-locked">
-          <div>
-            <p class="eyebrow">Read-only right now</p>
-            <h2>Picking is locked until you sign in.</h2>
-            <p class="helper-text">
-              Log in to generate recommendations and save the history that powers repeat avoidance.
-            </p>
+          <div class="overview-strip">
+            <article class="stat-chip">
+              <span class="stat-label">Rule set</span>
+              <strong class="stat-chip-value">{{ rules.rules_label }}</strong>
+              <span class="stat-note">Cutoff {{ rules.effective_cutoff_display }}</span>
+            </article>
+            <article class="stat-chip">
+              <span class="stat-label">Inventory ready</span>
+              <strong class="stat-chip-value">{{ available_count }}</strong>
+              <span class="stat-note">{{ favorite_count }} favorites available</span>
+            </article>
+            <article class="stat-chip">
+              <span class="stat-label">Passport</span>
+              <strong class="stat-chip-value">{{ passport_summary.unique_sodas }}</strong>
+              <span class="stat-note">{{ passport_summary.countries_count }} countries tracked</span>
+            </article>
           </div>
-          <a class="button" href="{{ access_login_url }}">Log in to pick</a>
         </div>
-      {% endif %}
+
+        <aside class="picker-stage picker-stage-embedded">
+          {% if can_write %}
+            <form action="/pick" method="post" class="picker-stage-form">
+              <div class="picker-stage-top">
+                <label>
+                  <span>Soda mood / type</span>
+                  <select name="pick_style">
+                    {% for group in pick_style_groups %}
+                      <optgroup label="{{ group.label }}">
+                        {% for option in group.options %}
+                          <option value="{{ option.value }}" {% if option.value == pick_style_value %}selected{% endif %}>
+                            {{ option.label }}
+                          </option>
+                        {% endfor %}
+                      </optgroup>
+                    {% endfor %}
+                  </select>
+                </label>
+                <p class="helper-text">{{ pick_style_description }}</p>
+                <label class="toggle">
+                  <input type="checkbox" name="chaos_mode" value="true" {% if chaos_mode %}checked{% endif %}>
+                  <span>Treat mode</span>
+                </label>
+                <p class="helper-text">
+                  Treat mode loosens the weighting, but it still respects hard timing and caffeine guardrails.
+                </p>
+              </div>
+              <button type="submit" class="button picker-button">
+                <span class="mini-can button-can" aria-hidden="true"></span>
+                <span class="picker-button-label">Pick My Soda</span>
+              </button>
+            </form>
+          {% else %}
+            <div class="picker-stage-locked">
+              <div>
+                <p class="eyebrow">Read-only right now</p>
+                <h2>Picking is locked until you sign in.</h2>
+                <p class="helper-text">
+                  Log in to generate recommendations and save the history that powers repeat avoidance.
+                </p>
+              </div>
+              <a class="button" href="{{ access_login_url }}">Log in to pick</a>
+            </div>
+          {% endif %}
+        </aside>
+      </div>
     </article>
   </section>
 
@@ -111,10 +130,16 @@
             </div>
             <div class="recommendation-copy">
               <div class="badge-row">
+                {% if recommendation.pick_style_value != 'any' %}
+                  <span class="badge accent">{{ recommendation.pick_style_label }}</span>
+                {% endif %}
                 <span class="badge tone-cola">{{ recommendation.soda.soda.category }}</span>
                 <span class="badge tone-mint">{{ recommendation.soda.soda.caffeine_label }}</span>
                 {% if recommendation.soda.soda.sugar_g is not none %}
                   <span class="badge tone-peach">{{ recommendation.soda.soda.sugar_g|number }} g sugar</span>
+                {% endif %}
+                {% if recommendation.pick_style_fallback_used %}
+                  <span class="badge warning">Broader fallback</span>
                 {% endif %}
                 {% if recommendation.soda.state.preference == 'favorite' %}
                   <span class="badge accent">Favorite</span>
@@ -129,7 +154,7 @@
               <dl class="feature-list">
                 <div>
                   <dt>Caffeine</dt>
-                  <dd>{{ recommendation.soda.soda.caffeine_mg|number }} mg</dd>
+                  <dd>{{ recommendation.soda.soda.caffeine_label }}</dd>
                 </div>
                 <div>
                   <dt>Sugar</dt>
@@ -170,6 +195,7 @@
           <div class="recommendation-actions">
             {% if can_write %}
               <form action="/pick" method="post" class="inline-form">
+                <input type="hidden" name="pick_style" value="{{ recommendation.pick_style_value }}">
                 {% if chaos_mode %}
                   <input type="hidden" name="chaos_mode" value="true">
                 {% endif %}

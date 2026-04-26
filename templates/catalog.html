@@ -14,6 +14,7 @@
       <div class="page-header-actions">
         <a class="button tertiary" href="/exports/catalog.csv">Download current CSV</a>
         {% if is_admin %}
+          <a class="button tertiary" href="#catalog-add">Add soda</a>
           <a class="button secondary" href="#catalog-import">Replace catalog</a>
         {% endif %}
       </div>
@@ -82,7 +83,7 @@
                       {% endif %}
                     </div>
                   </td>
-                  <td>{{ item.soda.caffeine_mg|number }} mg</td>
+                  <td>{{ item.soda.caffeine_label }}</td>
                   <td>{{ item.soda.category }}</td>
                   <td>
                     <p>{{ item.soda.priority }} priority</p>
@@ -129,6 +130,53 @@
     </div>
 
     <div class="column-side">
+      <section class="panel sticky-panel" id="catalog-add">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Quick add</p>
+            <h2>Add a shared soda</h2>
+          </div>
+        </div>
+        {% if is_admin %}
+          <form action="/catalog/add" method="post" class="stack-form">
+            <label>
+              <span>Soda name</span>
+              <input type="text" name="name" placeholder="Jarritos Mandarin" required>
+            </label>
+            <label>
+              <span>Brand</span>
+              <input type="text" name="brand" placeholder="Optional">
+            </label>
+            <label>
+              <span>Category</span>
+              <input type="text" name="category" placeholder="Cola, fruit soda, cream soda">
+            </label>
+            <label>
+              <span>Tags</span>
+              <input type="text" name="tags" placeholder="mandarin, mexican, citrus">
+            </label>
+            <input type="hidden" name="contains_caffeine" value="false">
+            <label class="inline-check">
+              <input type="checkbox" name="contains_caffeine" value="true">
+              <span>Contains caffeine</span>
+            </label>
+            <input type="hidden" name="is_diet" value="false">
+            <label class="inline-check">
+              <input type="checkbox" name="is_diet" value="true">
+              <span>Diet / zero sugar</span>
+            </label>
+            <button type="submit" class="button">Add to shared CSV</button>
+          </form>
+          <p class="helper-text">
+            Exact caffeine and sugar values can stay unknown here. If you mark a soda as caffeinated, Soda Picker stores a conservative internal estimate so the timing and caffeine rules still work.
+          </p>
+        {% else %}
+          <p class="helper-text">
+            Only admins can write new sodas into the shared catalog CSV.
+          </p>
+        {% endif %}
+      </section>
+
       <section class="panel sticky-panel" id="catalog-import">
         <div class="section-heading">
           <div>

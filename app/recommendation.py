@@ -14,6 +14,8 @@ from .models import (
     RejectionDetail,
     format_clock_time,
 )
+from .pick_styles import ANY_PICK_STYLE, PickStyleOption
+from .training import PassportTrainingProfile, build_training_adjustment
 
 
 @dataclass
@@ -21,6 +23,7 @@ class _CandidateEvaluation:
     item: CatalogItem
     weight: float
     reasons: list[str] = field(default_factory=list)
+    nudges: list[str] = field(default_factory=list)
     blocked: bool = False
 
 
@@ -35,9 +38,12 @@ class RecommendationEngine:
         today_entries: list[ConsumptionEntry],
         local_now: datetime,
         chaos_mode: bool = False,
+        pick_style: PickStyleOption = ANY_PICK_STYLE,
+        training_profile: PassportTrainingProfile | None = None,
         rng: Random | None = None,
     ) -> RecommendationResult:
         rng = rng or Random()
+        training_profile = training_profile or PassportTrainingProfile()
 
         if self._minutes_since_midnight(local_now) < rules.no_soda_before_minutes:
             return RecommendationResult(
@@ -51,6 +57,8 @@ class RecommendationEngine:
                 effective_cutoff_label=rules.effective_cutoff_display,
                 bedtime_label=rules.bedtime_display,
                 rules_summary=self._build_rules_summary(rules),
+                pick_style_value=pick_style.value,
+                pick_style_label=pick_style.label,
             )
 
         if not catalog_items:
@@ -62,6 +70,8 @@ class RecommendationEngine:
                 effective_cutoff_label=rules.effective_cutoff_display,
                 bedtime_label=rules.bedtime_display,
                 rules_summary=self._build_rules_summary(rules),
+                pick_style_value=pick_style.value,
+                pick_style_label=pick_style.label,
             )
 
         stage = self._day_stage(local_now, rules)
@@ -76,21 +86,34 @@ class RecommendationEngine:
                     local_now=local_now,
                     stage=stage,
                     chaos_mode=chaos_mode,
+                    training_profile=training_profile,
                 )
             )
 
-        candidates = [evaluation for evaluation in evaluations if evaluation.weight > 0]
+        candidates, pick_style_fallback_used = self._filter_candidates_for_pick_style(
+            evaluations=evaluations,
+            pick_style=pick_style,
+        )
         if not candidates:
             rejected = self._build_rejections(evaluations, exclude_id=None)
             return RecommendationResult(
                 status="blocked",
                 headline="No safe pick right now",
-                reason=self._build_no_pick_reason(daily_caffeine_total, rules, stage, evaluations, local_now),
+                reason=self._build_no_pick_reason(
+                    daily_caffeine_total,
+                    rules,
+                    stage,
+                    evaluations,
+                    local_now,
+                    pick_style=pick_style,
+                ),
                 chaos_mode=chaos_mode,
                 rejected_options=rejected,
                 effective_cutoff_label=rules.effective_cutoff_display,
                 bedtime_label=rules.bedtime_display,
                 rules_summary=self._build_rules_summary(rules),
+                pick_style_value=pick_style.value,
+                pick_style_label=pick_style.label,
             )
 
         choice = self._weighted_choice(candidates, rng)
@@ -107,6 +130,8 @@ class RecommendationEngine:
                 rules=rules,
                 daily_caffeine_total=daily_caffeine_total,
                 chaos_mode=chaos_mode,
+                pick_style=pick_style,
+                pick_style_fallback_used=pick_style_fallback_used,
             ),
             soda=choice.item,
             chaos_mode=chaos_mode,
@@ -116,6 +141,9 @@ class RecommendationEngine:
             effective_cutoff_label=rules.effective_cutoff_display,
             bedtime_label=rules.bedtime_display,
             rules_summary=self._build_rules_summary(rules),
+            pick_style_value=pick_style.value,
+            pick_style_label=pick_style.label,
+            pick_style_fallback_used=pick_style_fallback_used,
         )
 
     @staticmethod
@@ -140,6 +168,7 @@ class RecommendationEngine:
         local_now: datetime,
         stage: str,
         chaos_mode: bool,
+        training_profile: PassportTrainingProfile,
     ) -> _CandidateEvaluation:
         evaluation = _CandidateEvaluation(item=item, weight=max(float(item.soda.priority), 1.0))
 
@@ -154,6 +183,18 @@ class RecommendationEngine:
             evaluation.blocked = True
             until = item.state.temp_ban_until.strftime("%b %d")
             evaluation.reasons.append(f"temporarily banned until {until}")
+            return evaluation
+
+        if item.soda.is_diet and not rules.allow_diet_sodas:
+            evaluation.weight = 0
+            evaluation.blocked = True
+            evaluation.reasons.append("diet and zero-sugar sodas are turned off")
+            return evaluation
+
+        if not item.soda.is_diet and not rules.allow_full_sugar_sodas:
+            evaluation.weight = 0
+            evaluation.blocked = True
+            evaluation.reasons.append("full-sugar sodas are turned off")
             return evaluation
 
         if item.state.preference == PREFERENCE_FAVORITE:
@@ -209,10 +250,31 @@ class RecommendationEngine:
             elif stage == "night":
                 evaluation.weight *= 2.4
 
+        training_adjustment = build_training_adjustment(item, training_profile)
+        if training_adjustment.multiplier != 1.0:
+            evaluation.weight *= training_adjustment.multiplier
+        evaluation.nudges.extend(training_adjustment.nudges)
+        evaluation.reasons.extend(training_adjustment.penalties)
+
         if chaos_mode and evaluation.weight > 0:
             evaluation.weight *= 1.15
 
         return evaluation
+
+    @staticmethod
+    def _filter_candidates_for_pick_style(
+        *,
+        evaluations: list[_CandidateEvaluation],
+        pick_style: PickStyleOption,
+    ) -> tuple[list[_CandidateEvaluation], bool]:
+        candidates = [evaluation for evaluation in evaluations if evaluation.weight > 0]
+        if pick_style.is_any or not candidates:
+            return candidates, False
+
+        matching = [evaluation for evaluation in candidates if pick_style.matches(evaluation.item)]
+        if matching:
+            return matching, False
+        return candidates, True
 
     @staticmethod
     def _weighted_choice(candidates: list[_CandidateEvaluation], rng: Random) -> _CandidateEvaluation:
@@ -258,24 +320,40 @@ class RecommendationEngine:
         rules: RuntimeRules,
         daily_caffeine_total: float,
         chaos_mode: bool,
+        pick_style: PickStyleOption,
+        pick_style_fallback_used: bool,
     ) -> str:
         item = choice.item
+        base_reason: str
         if chaos_mode:
-            return "Random fun pick within your current safety and timing limits."
-        if item.state.preference == PREFERENCE_FAVORITE:
-            return "Favorite available, in stock, and still inside the current rules."
-        if item.soda.caffeine_mg <= 0 and stage in {"late", "night"}:
-            return "Lower-risk pick for later in the day."
-        if daily_caffeine_total > 0 and item.soda.caffeine_mg <= 20:
-            return f"You already had {daily_caffeine_total:g} mg today, so this keeps things gentler."
-        if stage == "late":
-            return (
+            base_reason = "Random fun pick within your current safety and timing limits."
+        elif item.state.preference == PREFERENCE_FAVORITE:
+            base_reason = "Favorite available, in stock, and still inside the current rules."
+        elif item.soda.caffeine_mg <= 0 and stage in {"late", "night"}:
+            base_reason = "Lower-risk pick for later in the day."
+        elif daily_caffeine_total > 0 and item.soda.caffeine_mg <= 20:
+            base_reason = f"You already had {daily_caffeine_total:g} mg today, so this keeps things gentler."
+        elif stage == "late":
+            base_reason = (
                 f"The caffeine window starts tightening around {rules.effective_cutoff_display}, "
                 "so this came out as a safer late-day option."
             )
-        if item.soda.priority > 1:
-            return "Higher-priority pick that still fits your current caffeine budget."
-        return "Balanced random pick within your current limits."
+        elif item.soda.priority > 1:
+            base_reason = "Higher-priority pick that still fits your current caffeine budget."
+        else:
+            base_reason = "Balanced random pick within your current limits."
+
+        if choice.nudges:
+            base_reason = f"{base_reason} {choice.nudges[0].capitalize()}."
+
+        if pick_style.is_any:
+            return base_reason
+        if pick_style_fallback_used:
+            return (
+                f"Nothing safe matched your {pick_style.label.lower()} pick, "
+                f"so this fell back to the broader safe list. {base_reason}"
+            )
+        return f"Matched your {pick_style.label.lower()} pick. {base_reason}"
 
     @staticmethod
     def _build_no_pick_reason(
@@ -284,7 +362,22 @@ class RecommendationEngine:
         stage: str,
         evaluations: list[_CandidateEvaluation],
         local_now: datetime,
+        *,
+        pick_style: PickStyleOption,
     ) -> str:
+        if not pick_style.is_any:
+            matching_evaluations = [evaluation for evaluation in evaluations if pick_style.matches(evaluation.item)]
+            if matching_evaluations and all(evaluation.weight <= 0 for evaluation in matching_evaluations):
+                return (
+                    f"Nothing in your {pick_style.label.lower()} lane survived the current inventory, "
+                    "timing, and caffeine rules."
+                )
+        if not rules.allow_diet_sodas and not rules.allow_full_sugar_sodas:
+            return "Both diet and full-sugar sodas are turned off in your settings."
+        if not rules.allow_diet_sodas and all(evaluation.item.soda.is_diet for evaluation in evaluations):
+            return "Only diet or zero-sugar sodas are available right now, and you turned those off."
+        if not rules.allow_full_sugar_sodas and all(not evaluation.item.soda.is_diet for evaluation in evaluations):
+            return "Only full-sugar sodas are available right now, and you turned those off."
         if all(not evaluation.item.state.is_available for evaluation in evaluations):
             return "Everything in the catalog is currently marked out of stock."
         if all(evaluation.item.state.is_temporarily_banned(local_now) for evaluation in evaluations):

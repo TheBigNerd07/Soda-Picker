@@ -57,6 +57,78 @@ class SodaCatalogTests(unittest.TestCase):
             self.assertEqual(sodas[0].caffeine_mg, 0.0)
             self.assertTrue(sodas[0].is_caffeine_free)
 
+    def test_blank_caffeine_with_explicit_caffeinated_uses_estimate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "sodas.csv"
+            csv_path.write_text(
+                textwrap.dedent(
+                    """\
+                    name,brand,caffeine_mg,is_caffeine_free
+                    Mystery Cola,Example,,false
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            catalog = SodaCatalog(str(csv_path))
+            sodas = catalog.list_sodas()
+
+            self.assertEqual(len(sodas), 1)
+            self.assertFalse(sodas[0].is_caffeine_free)
+            self.assertTrue(sodas[0].caffeine_is_estimated)
+            self.assertEqual(sodas[0].caffeine_label, "Contains caffeine")
+
+    def test_add_soda_appends_to_csv_with_minimal_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "sodas.csv"
+            csv_path.write_text(
+                textwrap.dedent(
+                    """\
+                    name
+                    Lemon Sparkle
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            catalog = SodaCatalog(str(csv_path))
+            added = catalog.add_soda(
+                name="Jarritos Mandarin",
+                brand="Jarritos",
+                category="Fruit soda",
+                contains_caffeine=False,
+                is_diet=False,
+                tags=("mandarin", "citrus"),
+            )
+
+            self.assertEqual(added.display_name, "Jarritos Mandarin")
+            reloaded = catalog.list_sodas()
+            self.assertEqual(len(reloaded), 2)
+            self.assertEqual(reloaded[-1].display_name, "Jarritos Mandarin")
+            self.assertTrue(reloaded[-1].is_caffeine_free)
+
+            raw_text = csv_path.read_text(encoding="utf-8")
+            self.assertIn("is_caffeine_free", raw_text)
+            self.assertIn("Jarritos Mandarin,Jarritos,0,,Fruit soda,false,true", raw_text)
+
+    def test_add_caffeinated_soda_keeps_exact_mg_blank(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "sodas.csv"
+            csv_path.write_text("name\nLemon Sparkle\n", encoding="utf-8")
+
+            catalog = SodaCatalog(str(csv_path))
+            added = catalog.add_soda(
+                name="Mystery Cola",
+                brand="Example",
+                category="Cola",
+                contains_caffeine=True,
+            )
+
+            self.assertFalse(added.is_caffeine_free)
+            self.assertTrue(added.caffeine_is_estimated)
+            raw_text = csv_path.read_text(encoding="utf-8")
+            self.assertIn("Mystery Cola,Example,,,Cola,false,false", raw_text)
+
     def test_duplicate_names_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "sodas.csv"

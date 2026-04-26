@@ -75,12 +75,49 @@ class DatabaseTests(unittest.TestCase):
             {
                 "no_soda_before": "11:00",
                 "reminder_enabled": "true",
+                "allow_diet_sodas": "false",
             }
         )
         overrides = self.database.get_setting_overrides(self.user.id)
         self.assertEqual(overrides["no_soda_before"], "11:00")
         self.assertEqual(overrides["reminder_enabled"], "true")
+        self.assertEqual(overrides["allow_diet_sodas"], "false")
         self.assertEqual(self.database.get_setting_overrides(self.other_user.id), {})
+
+    def test_taste_training_is_user_specific(self) -> None:
+        self.database.set_taste_training(
+            self.user.id,
+            {
+                "boost_categories": "cola,orange",
+                "strength": "assertive",
+            },
+        )
+        self.database.set_taste_training(
+            self.other_user.id,
+            {
+                "boost_moods": "mood:fruit-forward",
+                "strength": "subtle",
+            },
+        )
+
+        self.assertEqual(
+            self.database.get_taste_training(self.user.id),
+            {
+                "boost_categories": "cola,orange",
+                "strength": "assertive",
+            },
+        )
+        self.assertEqual(
+            self.database.get_taste_training(self.other_user.id),
+            {
+                "boost_moods": "mood:fruit-forward",
+                "strength": "subtle",
+            },
+        )
+
+        self.database.clear_taste_training(self.user.id)
+        self.assertEqual(self.database.get_taste_training(self.user.id), {})
+        self.assertNotEqual(self.database.get_taste_training(self.other_user.id), {})
 
     def test_recommendation_history_tracks_logged_state(self) -> None:
         soda = Soda(id="cola-1", name="Cola", brand="Example", caffeine_mg=38)

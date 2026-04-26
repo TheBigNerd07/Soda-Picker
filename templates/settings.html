@@ -12,6 +12,9 @@
         </p>
       </div>
       <div class="page-header-actions">
+        {% if is_authenticated %}
+          <a class="button tertiary" href="#taste-training">Taste training</a>
+        {% endif %}
         <a class="button tertiary" href="#exports">Exports and backups</a>
         {% if is_admin %}
           <a class="button secondary" href="#user-accounts">Manage users</a>
@@ -82,6 +85,18 @@
           </label>
         </div>
         <div class="toggle-row">
+          <input type="hidden" name="allow_diet_sodas" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="allow_diet_sodas" value="true" {% if settings.allow_diet_sodas %}checked{% endif %}>
+            <span>Allow diet / zero-sugar sodas</span>
+          </label>
+          <input type="hidden" name="allow_full_sugar_sodas" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="allow_full_sugar_sodas" value="true" {% if settings.allow_full_sugar_sodas %}checked{% endif %}>
+            <span>Allow full-sugar sodas</span>
+          </label>
+        </div>
+        <div class="toggle-row">
           <input type="hidden" name="chaos_mode_default" value="false">
           <label class="inline-check">
             <input type="checkbox" name="chaos_mode_default" value="true" {% if settings.chaos_mode_default %}checked{% endif %}>
@@ -124,6 +139,189 @@
         {% endfor %}
       </dl>
     </article>
+  </section>
+
+  <section class="panel content-panel top-gap" id="taste-training">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Taste training</p>
+        <h2>Teach Soda Picker from your passport</h2>
+      </div>
+    </div>
+    {% if not is_authenticated %}
+      <p class="empty-copy">Sign in to build a passport-based training profile for your own recommendations.</p>
+    {% else %}
+      <p class="helper-text">
+        These answers stay on <strong>{{ auth_username }}</strong>. You can force the original picker, force the passport-trained picker, or leave it on auto so it falls back to classic when this account does not have enough saved training signal yet.
+      </p>
+
+      <form action="/settings/training/save" method="post" class="stack-form top-gap">
+        <div class="form-grid">
+          <label>
+            <span>Recommendation mode</span>
+            <select name="mode">
+              {% for value, label, hint in training_mode_options %}
+                <option value="{{ value }}" {% if training_profile.normalized_mode == value %}selected{% endif %}>{{ label }} - {{ hint }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Effective mode right now</span>
+            <input type="text" value="{{ training_profile.effective_mode_label }}" readonly>
+          </label>
+        </div>
+
+        {% if not training_menu.has_passport_entries %}
+          <p class="helper-text">
+            This account does not have passport examples yet, so <strong>Auto</strong> and <strong>Passport-trained</strong> currently behave like <strong>Classic</strong>.
+          </p>
+        {% elif not training_menu.has_questions %}
+          <p class="helper-text">
+            This account has passport entries, but they do not overlap with the current catalog well enough to ask useful training questions yet. Auto will still fall back to classic for now.
+          </p>
+        {% endif %}
+
+        {% if training_menu.has_questions %}
+          <div class="training-grid">
+            <section class="training-card">
+              <div>
+                <h3>Which passport categories should get a boost?</h3>
+                <p class="helper-text">Only categories that overlap with your current catalog show up here.</p>
+              </div>
+              <div class="training-options">
+                {% for option in training_menu.category_options %}
+                  <label class="training-option">
+                    <input type="checkbox" name="boost_categories" value="{{ option.key }}" {% if option.key in training_profile.boost_category_keys %}checked{% endif %}>
+                    <span>
+                      <strong>{{ option.label }}</strong>
+                      <small>{{ option.detail }}</small>
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+            </section>
+
+            <section class="training-card">
+              <div>
+                <h3>Any categories you want toned down?</h3>
+                <p class="helper-text">Use this when your passport says you tried it, but do not want it pushed often.</p>
+              </div>
+              <div class="training-options">
+                {% for option in training_menu.category_options %}
+                  <label class="training-option">
+                    <input type="checkbox" name="avoid_categories" value="{{ option.key }}" {% if option.key in training_profile.avoid_category_keys %}checked{% endif %}>
+                    <span>
+                      <strong>{{ option.label }}</strong>
+                      <small>{{ option.detail }}</small>
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+            </section>
+          </div>
+
+          {% if training_menu.mood_options %}
+            <div class="training-grid top-gap">
+              <section class="training-card">
+                <div>
+                  <h3>Which overall soda moods fit your passport?</h3>
+                  <p class="helper-text">These match the same moods from the main picker: fruit-forward, crisp, creamy, and similar lanes.</p>
+                </div>
+                <div class="training-options">
+                  {% for option in training_menu.mood_options %}
+                    <label class="training-option">
+                      <input type="checkbox" name="boost_moods" value="{{ option.key }}" {% if option.key in training_profile.boost_mood_values %}checked{% endif %}>
+                      <span>
+                        <strong>{{ option.label }}</strong>
+                        <small>{{ option.detail }}</small>
+                      </span>
+                    </label>
+                  {% endfor %}
+                </div>
+              </section>
+
+              <section class="training-card">
+                <div>
+                  <h3>Which moods should the picker cool off on?</h3>
+                  <p class="helper-text">This is useful when your passport history says a lane is not really your thing.</p>
+                </div>
+                <div class="training-options">
+                  {% for option in training_menu.mood_options %}
+                    <label class="training-option">
+                      <input type="checkbox" name="avoid_moods" value="{{ option.key }}" {% if option.key in training_profile.avoid_mood_values %}checked{% endif %}>
+                      <span>
+                        <strong>{{ option.label }}</strong>
+                        <small>{{ option.detail }}</small>
+                      </span>
+                    </label>
+                  {% endfor %}
+                </div>
+              </section>
+            </div>
+          {% endif %}
+
+          <div class="form-grid top-gap">
+            <label>
+              <span>How strongly should passport training steer picks?</span>
+              <select name="strength">
+                {% for value, label, hint in training_strength_options %}
+                  <option value="{{ value }}" {% if training_profile.normalized_strength == value %}selected{% endif %}>{{ label }} - {{ hint }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button type="submit" class="button">Save taste training</button>
+          </div>
+        {% else %}
+          <div class="form-grid top-gap">
+            <label>
+              <span>Training strength</span>
+              <select name="strength">
+                {% for value, label, hint in training_strength_options %}
+                  <option value="{{ value }}" {% if training_profile.normalized_strength == value %}selected{% endif %}>{{ label }} - {{ hint }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+          <div class="button-row">
+            <button type="submit" class="button">Save recommendation mode</button>
+          </div>
+        {% endif %}
+      </form>
+
+      <form action="/settings/training/reset" method="post" class="inline-form top-gap">
+        <button type="submit" class="button tertiary">Clear taste training</button>
+      </form>
+
+      <div class="training-summary top-gap">
+        <div class="mini-panel">
+          <p class="eyebrow">Current boost</p>
+          {% if training_menu.boost_labels %}
+            <div class="badge-row">
+              {% for label in training_menu.boost_labels %}
+                <span class="badge accent">{{ label }}</span>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="helper-text">No boost lanes saved yet.</p>
+          {% endif %}
+        </div>
+        <div class="mini-panel">
+          <p class="eyebrow">Current cool-off</p>
+          {% if training_menu.avoid_labels %}
+            <div class="badge-row">
+              {% for label in training_menu.avoid_labels %}
+                <span class="badge">{{ label }}</span>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="helper-text">No toned-down lanes saved yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
   </section>
 
   <section class="dashboard-grid">

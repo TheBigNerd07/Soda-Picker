@@ -29,6 +29,7 @@ from .models import (
     format_calendar_date,
     format_clock_time,
 )
+from .pick_styles import build_pick_style_groups, resolve_pick_style_option
 from .recommendation import RecommendationEngine
 from .security import (
     AUTH_COOKIE_NAME,
@@ -39,6 +40,13 @@ from .security import (
     read_auth_token,
 )
 from .settings_store import SettingsStore
+from .training import (
+    build_training_menu,
+    build_training_mode_options,
+    build_training_strength_options,
+    profile_from_storage,
+    serialize_training_form,
+)
 
 base_settings = Settings.from_env()
 logging.basicConfig(
@@ -385,6 +393,7 @@ def _dashboard_context(
     recommendation=None,
     recommendation_id: int | None = None,
     chaos_mode: bool | None = None,
+    pick_style_value: str | None = None,
 ) -> dict[str, Any]:
     context = _build_common_context(
         request,
@@ -392,11 +401,17 @@ def _dashboard_context(
         local_now=local_now,
         flash_message=flash_message,
     )
+    pick_style_groups = build_pick_style_groups(context["catalog_items"])
+    selected_pick_style = resolve_pick_style_option(pick_style_value, context["catalog_items"])
     context.update(
         {
             "recommendation": recommendation,
             "recommendation_id": recommendation_id,
             "chaos_mode": settings.chaos_mode_default if chaos_mode is None else chaos_mode,
+            "pick_style_groups": pick_style_groups,
+            "pick_style_value": selected_pick_style.value,
+            "pick_style_label": selected_pick_style.label,
+            "pick_style_description": selected_pick_style.description,
             "available_count": sum(1 for item in context["catalog_items"] if item.state.is_available),
             "favorite_count": sum(1 for item in context["catalog_items"] if item.state.preference == "favorite"),
             "manual_entry_time": local_now.strftime("%Y-%m-%dT%H:%M"),
@@ -404,6 +419,22 @@ def _dashboard_context(
         }
     )
     return context
+
+
+def _build_training_context(*, user_id: int, catalog_items: list[CatalogItem]) -> dict[str, Any]:
+    passport_entries = database.list_passport_entries(user_id, limit=400)
+    training_profile = profile_from_storage(database.get_taste_training(user_id))
+    training_menu = build_training_menu(
+        passport_entries=passport_entries,
+        catalog_items=catalog_items,
+        profile=training_profile,
+    )
+    return {
+        "training_profile": training_profile,
+        "training_menu": training_menu,
+        "training_mode_options": build_training_mode_options(),
+        "training_strength_options": build_training_strength_options(),
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -416,7 +447,7 @@ async def dashboard(request: Request) -> HTMLResponse:
         local_now=local_now,
         flash_message=_parse_flash(request),
     )
-    return templates.TemplateResponse("index.html", context)
+    return templates.TemplateResponse(request, "index.html", context)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -445,7 +476,7 @@ async def login_page(request: Request) -> HTMLResponse:
         "is_admin": False,
         "access_login_url": "/login",
     }
-    return templates.TemplateResponse("login.html", context)
+    return templates.TemplateResponse(request, "login.html", context)
 
 
 @app.post("/login", response_class=HTMLResponse)
@@ -476,7 +507,7 @@ async def login_submit(request: Request) -> Response:
             "is_admin": False,
             "access_login_url": "/login",
         }
-        return templates.TemplateResponse("login.html", context, status_code=401)
+        return templates.TemplateResponse(request, "login.html", context, status_code=401)
 
     token = issue_auth_token(
         user.username,
@@ -506,6 +537,7 @@ async def pick_soda(request: Request) -> HTMLResponse:
     settings, user = _settings_for_request(request)
     if user is None:
         return templates.TemplateResponse(
+            request,
             "login.html",
             {
                 "request": request,
@@ -532,8 +564,10 @@ async def pick_soda(request: Request) -> HTMLResponse:
     rules = settings.effective_rules(local_now)
     chaos_mode = parse_bool(form.get("chaos_mode"), settings.chaos_mode_default)
     catalog_items = _build_catalog_items(local_now, user_id=user.id)
+    pick_style = resolve_pick_style_option(str(form.get("pick_style", "")).strip(), catalog_items)
     today_entries = database.get_today_entries(user.id, local_now)
     daily_total = database.get_today_caffeine_total(user.id, local_now)
+    training_profile = profile_from_storage(database.get_taste_training(user.id))
 
     recommendation = engine.recommend(
         rules=rules,
@@ -543,6 +577,8 @@ async def pick_soda(request: Request) -> HTMLResponse:
         today_entries=today_entries,
         local_now=local_now,
         chaos_mode=chaos_mode,
+        pick_style=pick_style,
+        training_profile=training_profile if training_profile.uses_training else None,
     )
     recommendation_id = database.log_recommendation(user.id, recommendation, local_now)
     context = _dashboard_context(
@@ -552,8 +588,9 @@ async def pick_soda(request: Request) -> HTMLResponse:
         recommendation=recommendation,
         recommendation_id=recommendation_id,
         chaos_mode=chaos_mode,
+        pick_style_value=pick_style.value,
     )
-    return templates.TemplateResponse("index.html", context)
+    return templates.TemplateResponse(request, "index.html", context)
 
 
 @app.post("/log-consumption")
@@ -621,7 +658,7 @@ async def activity_page(request: Request) -> HTMLResponse:
             "manual_entry_time": local_now.strftime("%Y-%m-%dT%H:%M"),
         }
     )
-    return templates.TemplateResponse("activity.html", context)
+    return templates.TemplateResponse(request, "activity.html", context)
 
 
 @app.get("/wishlist", response_class=HTMLResponse)
@@ -635,7 +672,7 @@ async def wishlist_page(request: Request) -> HTMLResponse:
         flash_message=_parse_flash(request),
     )
     context["wishlist_entries"] = database.list_wishlist_entries(user.id, limit=300) if user is not None else []
-    return templates.TemplateResponse("wishlist.html", context)
+    return templates.TemplateResponse(request, "wishlist.html", context)
 
 
 @app.post("/wishlist/add")
@@ -799,7 +836,7 @@ async def passport_page(request: Request) -> HTMLResponse:
             "passport_entry_date": local_now.date().isoformat(),
         }
     )
-    return templates.TemplateResponse("passport.html", context)
+    return templates.TemplateResponse(request, "passport.html", context)
 
 
 @app.post("/passport/add")
@@ -931,7 +968,7 @@ async def catalog_page(request: Request) -> HTMLResponse:
         local_now=local_now,
         flash_message=_parse_flash(request),
     )
-    return templates.TemplateResponse("catalog.html", context)
+    return templates.TemplateResponse(request, "catalog.html", context)
 
 
 @app.post("/catalog/state")
@@ -955,11 +992,40 @@ async def save_catalog_state(request: Request) -> RedirectResponse:
     return _redirect_with_flash("/catalog", "Saved catalog controls.")
 
 
+@app.post("/catalog/add")
+async def add_catalog_soda(request: Request) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in as an admin to add shared catalog sodas.")
+    if not user.is_admin:
+        return _redirect_with_flash("/catalog", "Only admins can add shared sodas to the catalog CSV.")
+
+    form = await request.form()
+    backup_path = _backup_catalog_file(settings)
+    try:
+        soda = catalog.add_soda(
+            name=str(form.get("name", "")).strip(),
+            brand=str(form.get("brand", "")).strip(),
+            category=str(form.get("category", "")).strip(),
+            contains_caffeine=parse_bool(form.get("contains_caffeine"), False),
+            is_diet=parse_bool(form.get("is_diet"), False),
+            tags=tuple(part.strip() for part in str(form.get("tags", "")).replace(",", "|").split("|") if part.strip()),
+        )
+    except ValueError as exc:
+        return _redirect_with_flash("/catalog", f"Could not add soda: {exc}")
+
+    message = f"Added {soda.display_name} to the shared catalog CSV."
+    if backup_path is not None:
+        message += f" Backup saved as {backup_path.name}."
+    return _redirect_with_flash("/catalog", message)
+
+
 @app.post("/catalog/import", response_class=HTMLResponse)
 async def import_catalog(request: Request) -> HTMLResponse:
     settings, user = _settings_for_request(request)
     if user is None:
         return templates.TemplateResponse(
+            request,
             "login.html",
             {
                 "request": request,
@@ -982,6 +1048,7 @@ async def import_catalog(request: Request) -> HTMLResponse:
         )
     if not user.is_admin:
         return templates.TemplateResponse(
+            request,
             "catalog.html",
             {
                 **_build_common_context(
@@ -1014,7 +1081,7 @@ async def import_catalog(request: Request) -> HTMLResponse:
             "title": "Import failed",
             "details": ["No upload was received."],
         }
-        return templates.TemplateResponse("catalog.html", context)
+        return templates.TemplateResponse(request, "catalog.html", context)
 
     raw_bytes = await upload.read()
     try:
@@ -1031,7 +1098,7 @@ async def import_catalog(request: Request) -> HTMLResponse:
             "title": "Import failed",
             "details": ["The uploaded file could not be decoded as UTF-8."],
         }
-        return templates.TemplateResponse("catalog.html", context)
+        return templates.TemplateResponse(request, "catalog.html", context)
 
     preview_sodas, diagnostics = catalog.preview_upload(raw_text)
     fatal_warning = any(
@@ -1050,7 +1117,7 @@ async def import_catalog(request: Request) -> HTMLResponse:
             "title": "Import failed",
             "details": list(diagnostics.warnings),
         }
-        return templates.TemplateResponse("catalog.html", context)
+        return templates.TemplateResponse(request, "catalog.html", context)
 
     backup_path = _backup_catalog_file(settings)
     _, updated_diagnostics = catalog.replace_with_text(raw_text)
@@ -1072,7 +1139,7 @@ async def import_catalog(request: Request) -> HTMLResponse:
         "title": "Catalog imported",
         "details": detail_lines,
     }
-    return templates.TemplateResponse("catalog.html", context)
+    return templates.TemplateResponse(request, "catalog.html", context)
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -1090,7 +1157,9 @@ async def settings_page(request: Request) -> HTMLResponse:
     context["managed_users"] = database.list_users() if user is not None and user.is_admin else []
     context["managed_user_count"] = database.count_users()
     context["managed_admin_count"] = database.count_admin_users()
-    return templates.TemplateResponse("settings.html", context)
+    if user is not None:
+        context.update(_build_training_context(user_id=user.id, catalog_items=context["catalog_items"]))
+    return templates.TemplateResponse(request, "settings.html", context)
 
 
 @app.post("/settings/save")
@@ -1106,6 +1175,45 @@ async def save_settings(request: Request) -> RedirectResponse:
         LOGGER.warning("Invalid settings override: %s", exc)
         return _redirect_with_flash("/settings", f"Could not save settings: {exc}")
     return _redirect_with_flash("/settings", "Saved runtime settings.")
+
+
+@app.post("/settings/training/save")
+async def save_training_settings(request: Request) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save taste training.")
+
+    form = await request.form()
+    local_now = settings.local_now()
+    catalog_items = _build_catalog_items(local_now, user_id=user.id)
+    current_profile = profile_from_storage(database.get_taste_training(user.id))
+    training_menu = build_training_menu(
+        passport_entries=database.list_passport_entries(user.id, limit=400),
+        catalog_items=catalog_items,
+        profile=current_profile,
+    )
+    payload = serialize_training_form(
+        boost_category_keys=form.getlist("boost_categories"),
+        avoid_category_keys=form.getlist("avoid_categories"),
+        boost_mood_values=form.getlist("boost_moods"),
+        avoid_mood_values=form.getlist("avoid_moods"),
+        mode=str(form.get("mode", "")),
+        strength=str(form.get("strength", "")),
+        allowed_category_keys={option.key for option in training_menu.category_options},
+        allowed_mood_values={option.key for option in training_menu.mood_options},
+    )
+    database.set_taste_training(user.id, payload)
+    return _redirect_with_flash("/settings", "Saved passport-based taste training.")
+
+
+@app.post("/settings/training/reset")
+async def reset_training_settings(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to clear taste training.")
+
+    database.clear_taste_training(user.id)
+    return _redirect_with_flash("/settings", "Cleared passport-based taste training.")
 
 
 @app.post("/settings/reset")

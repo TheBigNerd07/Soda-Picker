@@ -23,6 +23,19 @@ OPTIONAL_COLUMNS = {
     "priority",
     "enabled",
 }
+CANONICAL_COLUMN_ORDER = (
+    "name",
+    "brand",
+    "caffeine_mg",
+    "sugar_g",
+    "category",
+    "is_diet",
+    "is_caffeine_free",
+    "tags",
+    "priority",
+    "enabled",
+)
+DEFAULT_ESTIMATED_CAFFEINE_MG = 35.0
 
 
 def _slugify(value: str) -> str:
@@ -113,6 +126,59 @@ class SodaCatalog:
         self._mtime_ns = self.csv_path.stat().st_mtime_ns
         return sodas, diagnostics
 
+    def add_soda(
+        self,
+        *,
+        name: str,
+        brand: str = "",
+        category: str = "",
+        contains_caffeine: bool,
+        is_diet: bool = False,
+        tags: tuple[str, ...] = (),
+        priority: int = 1,
+    ) -> Soda:
+        cleaned_name = name.strip()
+        if not cleaned_name:
+            raise ValueError("Soda name is required.")
+
+        cleaned_brand = brand.strip()
+        display_name = f"{cleaned_brand} {cleaned_name}".strip().lower()
+        self.refresh()
+        if any(soda.display_name.lower() == display_name for soda in self._sodas):
+            raise ValueError("That soda is already in the catalog.")
+
+        headers, rows = self._read_rows_for_update()
+        merged_headers = list(headers)
+        for field_name in CANONICAL_COLUMN_ORDER:
+            if field_name not in merged_headers:
+                merged_headers.append(field_name)
+
+        rows.append(
+            {
+                "name": cleaned_name,
+                "brand": cleaned_brand,
+                "caffeine_mg": "" if contains_caffeine else "0",
+                "sugar_g": "",
+                "category": category.strip() or "General",
+                "is_diet": "true" if is_diet else "false",
+                "is_caffeine_free": "false" if contains_caffeine else "true",
+                "tags": "|".join(tag for tag in tags if tag),
+                "priority": str(max(priority, 1)),
+                "enabled": "true",
+            }
+        )
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=merged_headers, lineterminator="\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in merged_headers})
+
+        sodas, diagnostics = self.replace_with_text(output.getvalue())
+        if not sodas:
+            raise RuntimeError("Catalog write succeeded but no sodas were loaded back.")
+        return sodas[-1]
+
     @property
     def diagnostics(self) -> CatalogDiagnostics:
         self.refresh()
@@ -195,11 +261,24 @@ class SodaCatalog:
             return None
 
         brand = row.get("brand", "").strip()
-        caffeine_mg = _parse_float(row.get("caffeine_mg"), 0.0, field_name="caffeine_mg") or 0.0
+        has_caffeine_value = "caffeine_mg" in row and row.get("caffeine_mg", "").strip() != ""
+        has_caffeine_free_value = "is_caffeine_free" in row and row.get("is_caffeine_free", "").strip() != ""
+        parsed_caffeine = _parse_float(row.get("caffeine_mg"), None, field_name="caffeine_mg")
+        explicit_caffeine_free = _parse_bool(row.get("is_caffeine_free"), False)
+        caffeine_is_estimated = False
+        if parsed_caffeine is not None:
+            caffeine_mg = parsed_caffeine
+            is_caffeine_free = explicit_caffeine_free or caffeine_mg <= 0
+        elif has_caffeine_free_value and not explicit_caffeine_free:
+            caffeine_mg = DEFAULT_ESTIMATED_CAFFEINE_MG
+            is_caffeine_free = False
+            caffeine_is_estimated = True
+        else:
+            caffeine_mg = 0.0
+            is_caffeine_free = True if not has_caffeine_value else explicit_caffeine_free
         sugar_g = _parse_float(row.get("sugar_g"), None, field_name="sugar_g")
         category = row.get("category", "").strip() or "General"
         is_diet = _parse_bool(row.get("is_diet"), False)
-        is_caffeine_free = _parse_bool(row.get("is_caffeine_free"), False) or caffeine_mg <= 0
         tags = _parse_tags(row.get("tags"))
         priority = max(_parse_int(row.get("priority"), 1, field_name="priority"), 1)
         slug_source = f"{brand}-{name}-{row_number}"
@@ -209,6 +288,7 @@ class SodaCatalog:
             name=name,
             brand=brand,
             caffeine_mg=caffeine_mg,
+            caffeine_is_estimated=caffeine_is_estimated,
             sugar_g=sugar_g,
             category=category,
             is_diet=is_diet,
@@ -230,3 +310,27 @@ class SodaCatalog:
             else:
                 seen[normalized] = soda.display_name
         return tuple(sorted(set(duplicates)))
+
+    def _read_rows_for_update(self) -> tuple[list[str], list[dict[str, str]]]:
+        path = self.csv_path
+        if not path.exists():
+            return list(CANONICAL_COLUMN_ORDER), []
+
+        raw_text = path.read_text(encoding="utf-8")
+        reader = csv.DictReader(io.StringIO(raw_text))
+        headers = [((field or "").strip().lower()) for field in (reader.fieldnames or ())]
+        headers = [field for field in headers if field]
+        if not headers:
+            raise ValueError("The current CSV is missing a header row.")
+        if any(column not in headers for column in REQUIRED_COLUMNS):
+            raise ValueError("The current CSV is missing required columns, so Soda Picker cannot append to it safely.")
+
+        rows: list[dict[str, str]] = []
+        for raw_row in reader:
+            rows.append(
+                {
+                    (key or "").strip().lower(): (value or "").strip()
+                    for key, value in raw_row.items()
+                }
+            )
+        return headers, rows

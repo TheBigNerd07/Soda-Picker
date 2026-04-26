@@ -38,6 +38,7 @@ USER_SETTING_OVERRIDE_TABLE = "user_setting_override"
 USER_RECOMMENDATION_TABLE = "user_recommendation_history"
 USER_PASSPORT_TABLE = "user_soda_passport"
 USER_WISHLIST_TABLE = "user_soda_wishlist"
+USER_TASTE_TRAINING_TABLE = "user_taste_training"
 USER_OWNED_TABLES = (
     USER_CONSUMPTION_TABLE,
     USER_SODA_STATE_TABLE,
@@ -45,6 +46,7 @@ USER_OWNED_TABLES = (
     USER_RECOMMENDATION_TABLE,
     USER_PASSPORT_TABLE,
     USER_WISHLIST_TABLE,
+    USER_TASTE_TRAINING_TABLE,
 )
 
 
@@ -548,6 +550,43 @@ class Database:
         with self._connect() as connection:
             connection.execute(
                 f"DELETE FROM {USER_SETTING_OVERRIDE_TABLE} WHERE user_id = ?",
+                (user_id,),
+            )
+
+    def get_taste_training(self, user_id: int) -> dict[str, str]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT key, value FROM {USER_TASTE_TRAINING_TABLE} WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        return {row["key"]: row["value"] for row in rows}
+
+    def set_taste_training(self, user_id: int, values: dict[str, str]) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as connection:
+            for key, value in values.items():
+                if value == "":
+                    connection.execute(
+                        f"DELETE FROM {USER_TASTE_TRAINING_TABLE} WHERE user_id = ? AND key = ?",
+                        (user_id, key),
+                    )
+                    continue
+
+                connection.execute(
+                    f"""
+                    INSERT INTO {USER_TASTE_TRAINING_TABLE} (user_id, key, value, updated_at_utc)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id, key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at_utc = excluded.updated_at_utc
+                    """,
+                    (user_id, key, value, now),
+                )
+
+    def clear_taste_training(self, user_id: int) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                f"DELETE FROM {USER_TASTE_TRAINING_TABLE} WHERE user_id = ?",
                 (user_id,),
             )
 
@@ -1469,6 +1508,18 @@ class Database:
             f"""
             CREATE INDEX IF NOT EXISTS idx_user_soda_wishlist_status_updated
             ON {USER_WISHLIST_TABLE} (user_id, status, updated_at_utc DESC)
+            """
+        )
+        connection.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {USER_TASTE_TRAINING_TABLE} (
+                user_id INTEGER NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL,
+                PRIMARY KEY (user_id, key),
+                FOREIGN KEY (user_id) REFERENCES user_account(id) ON DELETE CASCADE
+            )
             """
         )
 

@@ -40,6 +40,7 @@ class Soda:
     name: str
     brand: str = ""
     caffeine_mg: float = 0.0
+    caffeine_is_estimated: bool = False
     sugar_g: float | None = None
     category: str = "General"
     is_diet: bool = False
@@ -59,6 +60,8 @@ class Soda:
     def caffeine_label(self) -> str:
         if self.caffeine_mg <= 0:
             return "Caffeine-free"
+        if self.caffeine_is_estimated:
+            return "Contains caffeine"
         return f"{self.caffeine_mg:g} mg caffeine"
 
     @property
@@ -72,6 +75,8 @@ class Soda:
         badges: list[str] = []
         if self.is_caffeine_free or self.caffeine_mg <= 0:
             badges.append("Caffeine-Free")
+        elif self.caffeine_is_estimated:
+            badges.append("Caffeinated")
         elif self.caffeine_mg <= 20:
             badges.append("Low Caffeine")
         else:
@@ -183,6 +188,9 @@ class RecommendationResult:
     effective_cutoff_label: str = ""
     bedtime_label: str = ""
     rules_summary: str = ""
+    pick_style_value: str = "any"
+    pick_style_label: str = "Any soda"
+    pick_style_fallback_used: bool = False
 
 
 @dataclass(frozen=True)
