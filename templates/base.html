@@ -37,7 +37,7 @@
             {% if local_now_label is defined %}
               <p
                 id="clock"
-                class="status-pill"
+                class="status-pill utility-clock"
                 data-iso="{{ local_now_iso }}"
                 data-timezone="{{ settings.timezone_name }}"
                 title="{{ settings.timezone_name }}"
@@ -46,19 +46,19 @@
               </p>
             {% endif %}
             {% if daily_total is defined %}
-              <p class="status-pill status-pill-wide">Daily caffeine: {{ daily_total|number }} mg</p>
+              <p class="status-pill status-pill-wide utility-caffeine">Daily caffeine: {{ daily_total|number }} mg</p>
             {% endif %}
-            <a class="status-pill action-pill" href="/catalog">Browse catalog</a>
+            <a class="status-pill action-pill utility-browse" href="/catalog">Browse catalog</a>
             {% if access_control_enabled %}
-              <span class="status-pill {% if is_authenticated %}accent{% else %}warning{% endif %}">
+              <span class="status-pill utility-access {% if is_authenticated %}accent{% else %}warning{% endif %}">
                 {{ access_control_mode_label }}
               </span>
               {% if is_authenticated %}
-                <span class="status-pill">{{ auth_username }}</span>
+                <span class="status-pill utility-user">{{ auth_username }}</span>
                 {% if is_admin %}
-                  <span class="status-pill accent">Admin</span>
+                  <span class="status-pill accent utility-admin">Admin</span>
                 {% endif %}
-                <form action="/logout" method="post" class="inline-form auth-form">
+                <form action="/logout" method="post" class="inline-form auth-form utility-auth">
                   <button type="submit" class="button tertiary small-button">Log out</button>
                 </form>
               {% else %}

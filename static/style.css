@@ -3438,7 +3438,7 @@ textarea {
 
 @media (max-width: 860px) {
   :root {
-    --mobile-nav-height: 7rem;
+    --mobile-nav-height: 4.9rem;
   }
 
   .shell {
@@ -3448,8 +3448,8 @@ textarea {
   }
 
   .site-header {
-    position: sticky;
-    top: max(0.4rem, env(safe-area-inset-top));
+    position: static;
+    top: auto;
     padding: 0.95rem;
     border-radius: 26px;
   }
@@ -3470,30 +3470,42 @@ textarea {
   }
 
   .header-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
     gap: 0.55rem;
     width: 100%;
+    padding-bottom: 0.1rem;
+    scrollbar-width: none;
+  }
+
+  .header-actions::-webkit-scrollbar {
+    display: none;
   }
 
   .header-actions .status-pill,
   .header-actions .button,
   .header-actions .auth-form {
-    width: 100%;
+    width: auto;
+    flex: 0 0 auto;
     margin: 0;
   }
 
   .header-actions .auth-form .button {
-    width: 100%;
+    width: auto;
   }
 
   .header-actions .action-pill {
     display: none;
   }
 
+  .header-actions .utility-access,
+  .header-actions .utility-admin {
+    display: none;
+  }
+
   .status-pill-wide {
-    min-width: 0;
-    grid-column: 1 / -1;
+    min-width: max-content;
   }
 
   .page-header,
@@ -3523,23 +3535,31 @@ textarea {
     right: max(0.5rem, env(safe-area-inset-right));
     bottom: max(0.5rem, env(safe-area-inset-bottom));
     z-index: 60;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.45rem;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.35rem;
     padding: 0.45rem;
     border-radius: 28px;
     background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 18px 34px rgba(19, 39, 70, 0.18);
     backdrop-filter: blur(18px);
+    scrollbar-width: none;
+  }
+
+  .site-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .site-nav a {
-    min-height: 3.1rem;
-    padding: 0.65rem 0.45rem;
-    font-size: 0.8rem;
-    line-height: 1.1;
+    flex: 0 0 auto;
+    min-height: 3rem;
+    min-width: max-content;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.82rem;
+    line-height: 1;
     text-align: center;
-    white-space: normal;
+    white-space: nowrap;
   }
 
   .dashboard-grid,
@@ -3643,8 +3663,8 @@ textarea {
     padding: 0.95rem;
   }
 
-  .header-actions {
-    grid-template-columns: 1fr;
+  .header-actions .utility-clock {
+    display: none;
   }
 
   .brand-mark {
@@ -3657,13 +3677,14 @@ textarea {
   }
 
   .site-nav {
-    gap: 0.35rem;
+    gap: 0.3rem;
     padding: 0.35rem;
   }
 
   .site-nav a {
     min-height: 2.9rem;
     font-size: 0.76rem;
+    padding-inline: 0.8rem;
   }
 
   .recommendation-showcase .badge-row {
@@ -3680,5 +3701,5 @@ textarea {
 }
 
 .standalone-app .site-header {
-  top: max(0.2rem, env(safe-area-inset-top));
+  top: auto;
 }
