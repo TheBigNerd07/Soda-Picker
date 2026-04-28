@@ -8,12 +8,17 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .catalog import DEFAULT_ESTIMATED_CAFFEINE_MG
 from .models import (
     PREFERENCE_CHOICES,
     PREFERENCE_NEUTRAL,
     ConsumptionEntry,
+    PassportBreakdownItem,
+    PassportDuplicateGroup,
     PassportEntry,
+    PassportInsights,
     PassportSummary,
+    RECOMMENDATION_FEEDBACK_CHOICES,
     RecommendationHistoryEntry,
     RecommendationResult,
     Soda,
@@ -63,6 +68,7 @@ class Database:
             owner_user = bootstrap_user or local_user
 
             self._initialize_user_tables(connection)
+            self._ensure_user_table_columns(connection)
             self._migrate_legacy_tables(connection, owner_user_id=owner_user.id)
 
             if (
@@ -386,24 +392,49 @@ class Database:
         user_id: int,
         *,
         name: str,
+        brand: str = "",
         caffeine_mg: float,
         local_now: datetime,
         reason: str = "Manual caffeine entry",
+        entry_type: str = "manual",
         notes: str = "",
     ) -> None:
-        manual_id = f"manual-{int(local_now.timestamp())}"
+        manual_id = f"{entry_type}-{int(local_now.timestamp())}"
         self._insert_consumption(
             user_id=user_id,
             soda_id=manual_id,
             soda_name=name,
-            brand="",
+            brand=brand,
             caffeine_mg=caffeine_mg,
             local_now=local_now,
-            entry_type="manual",
+            entry_type=entry_type,
             reason=reason,
             chaos_mode=False,
             notes=notes,
             recommendation_id=None,
+        )
+
+    def log_manual_soda_entry(
+        self,
+        user_id: int,
+        *,
+        soda_name: str,
+        brand: str = "",
+        local_now: datetime,
+        contains_caffeine: bool,
+        caffeine_mg: float | None = None,
+        notes: str = "",
+    ) -> None:
+        resolved_caffeine = caffeine_mg if caffeine_mg is not None else (DEFAULT_ESTIMATED_CAFFEINE_MG if contains_caffeine else 0.0)
+        self.log_manual_entry(
+            user_id,
+            name=soda_name,
+            brand=brand,
+            caffeine_mg=resolved_caffeine,
+            local_now=local_now,
+            reason="Manual soda entry",
+            entry_type="manual_soda",
+            notes=notes,
         )
 
     def update_entry(
@@ -617,9 +648,10 @@ class Database:
                     status,
                     projected_total_mg,
                     was_logged,
-                    rejection_summary
+                    rejection_summary,
+                    feedback
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -636,6 +668,7 @@ class Database:
                     recommendation.projected_total_mg,
                     0,
                     rejection_summary,
+                    "",
                 ),
             )
         return int(cursor.lastrowid)
@@ -647,13 +680,29 @@ class Database:
                 (user_id, recommendation_id),
             )
 
+    def set_recommendation_feedback(self, user_id: int, recommendation_id: int, feedback: str) -> bool:
+        normalized_feedback = feedback.strip().lower()
+        if normalized_feedback not in RECOMMENDATION_FEEDBACK_CHOICES:
+            raise ValueError("Choose a valid recommendation feedback option.")
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                f"""
+                UPDATE {USER_RECOMMENDATION_TABLE}
+                SET feedback = ?
+                WHERE user_id = ? AND id = ?
+                """,
+                (normalized_feedback, user_id, recommendation_id),
+            )
+        return cursor.rowcount > 0
+
     def get_recent_recommendations(self, user_id: int, *, limit: int = 12) -> list[RecommendationHistoryEntry]:
         with self._connect() as connection:
             rows = connection.execute(
                 f"""
                 SELECT id, soda_id, soda_name, brand, caffeine_mg, recommended_at_local,
                        reason, chaos_mode, status, projected_total_mg, was_logged,
-                       rejection_summary
+                       rejection_summary, feedback
                 FROM {USER_RECOMMENDATION_TABLE}
                 WHERE user_id = ?
                 ORDER BY recommended_at_utc DESC
@@ -675,6 +724,7 @@ class Database:
                 projected_total_mg=row["projected_total_mg"],
                 was_logged=bool(row["was_logged"]),
                 rejection_summary=row["rejection_summary"],
+                feedback=row["feedback"] or "",
             )
             for row in rows
         ]
@@ -691,6 +741,7 @@ class Database:
         category: str,
         tried_on: date,
         where_tried: str,
+        contains_caffeine: bool,
         rating: int | None,
         would_try_again: bool,
         notes: str,
@@ -709,12 +760,13 @@ class Database:
                     category,
                     tried_on,
                     where_tried,
+                    contains_caffeine,
                     rating,
                     would_try_again,
                     notes,
                     created_at_utc
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -726,6 +778,7 @@ class Database:
                     category.strip(),
                     tried_on.isoformat(),
                     where_tried.strip(),
+                    int(contains_caffeine),
                     rating,
                     int(would_try_again),
                     notes.strip(),
@@ -739,7 +792,7 @@ class Database:
             rows = connection.execute(
                 f"""
                 SELECT id, soda_name, brand, country, region, city, category,
-                       tried_on, where_tried, rating, would_try_again, notes
+                       tried_on, where_tried, contains_caffeine, rating, would_try_again, notes, created_at_utc
                 FROM {USER_PASSPORT_TABLE}
                 WHERE user_id = ?
                 ORDER BY tried_on DESC, created_at_utc DESC, soda_name COLLATE NOCASE ASC
@@ -749,12 +802,46 @@ class Database:
             ).fetchall()
         return [self._map_passport_entry(row) for row in rows]
 
+    def find_passport_entry(
+        self,
+        user_id: int,
+        *,
+        soda_name: str,
+        brand: str = "",
+        tried_on: date | None = None,
+    ) -> PassportEntry | None:
+        filters = [
+            "user_id = ?",
+            "LOWER(TRIM(soda_name)) = LOWER(TRIM(?))",
+            "LOWER(TRIM(brand)) = LOWER(TRIM(?))",
+        ]
+        params: list[object] = [user_id, soda_name.strip(), brand.strip()]
+        if tried_on is not None:
+            filters.append("tried_on = ?")
+            params.append(tried_on.isoformat())
+
+        with self._connect() as connection:
+            row = connection.execute(
+                f"""
+                SELECT id, soda_name, brand, country, region, city, category,
+                       tried_on, where_tried, contains_caffeine, rating, would_try_again, notes, created_at_utc
+                FROM {USER_PASSPORT_TABLE}
+                WHERE {" AND ".join(filters)}
+                ORDER BY tried_on DESC, created_at_utc DESC
+                LIMIT 1
+                """,
+                tuple(params),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._map_passport_entry(row)
+
     def get_passport_entry(self, user_id: int, entry_id: int) -> PassportEntry | None:
         with self._connect() as connection:
             row = connection.execute(
                 f"""
                 SELECT id, soda_name, brand, country, region, city, category,
-                       tried_on, where_tried, rating, would_try_again, notes
+                       tried_on, where_tried, contains_caffeine, rating, would_try_again, notes, created_at_utc
                 FROM {USER_PASSPORT_TABLE}
                 WHERE user_id = ? AND id = ?
                 """,
@@ -777,6 +864,7 @@ class Database:
         category: str,
         tried_on: date,
         where_tried: str,
+        contains_caffeine: bool,
         rating: int | None,
         would_try_again: bool,
         notes: str,
@@ -793,6 +881,7 @@ class Database:
                     category = ?,
                     tried_on = ?,
                     where_tried = ?,
+                    contains_caffeine = ?,
                     rating = ?,
                     would_try_again = ?,
                     notes = ?
@@ -807,6 +896,7 @@ class Database:
                     category.strip(),
                     tried_on.isoformat(),
                     where_tried.strip(),
+                    int(contains_caffeine),
                     rating,
                     int(would_try_again),
                     notes.strip(),
@@ -853,6 +943,123 @@ class Database:
             countries_count=int(row["countries_count"]),
             latest_country=latest_country_row["country"] if latest_country_row else "",
         )
+
+    def get_passport_insights(self, user_id: int, *, limit: int = 5) -> PassportInsights:
+        entries = self.list_passport_entries(user_id, limit=1000)
+        return PassportInsights(
+            countries=self._build_passport_breakdown((entry.country for entry in entries), limit=limit),
+            brands=self._build_passport_breakdown((entry.brand for entry in entries), limit=limit),
+            categories=self._build_passport_breakdown((entry.category for entry in entries), limit=limit),
+        )
+
+    def list_passport_duplicate_groups(self, user_id: int, *, limit: int = 12) -> list[PassportDuplicateGroup]:
+        entries = self.list_passport_entries(user_id, limit=1000)
+        grouped: dict[str, list[PassportEntry]] = {}
+        for entry in entries:
+            key = self._normalize_passport_key(entry.soda_name, entry.brand)
+            grouped.setdefault(key, []).append(entry)
+
+        groups: list[PassportDuplicateGroup] = []
+        earliest_created = datetime.min.replace(tzinfo=timezone.utc)
+        for group_entries in grouped.values():
+            if len(group_entries) < 2:
+                continue
+            ordered_entries = tuple(
+                sorted(
+                    group_entries,
+                    key=lambda current: (
+                        current.tried_on,
+                        current.created_at_utc or earliest_created,
+                        current.id,
+                    ),
+                    reverse=True,
+                )
+            )
+            groups.append(PassportDuplicateGroup(entries=ordered_entries))
+
+        groups.sort(
+            key=lambda group: (
+                group.count,
+                group.entries[0].tried_on if group.entries else date.min,
+                group.display_name.lower(),
+            ),
+            reverse=True,
+        )
+        return groups[:limit]
+
+    def merge_passport_entries(self, user_id: int, entry_ids: list[int]) -> PassportEntry | None:
+        unique_ids = sorted({entry_id for entry_id in entry_ids if entry_id > 0})
+        if len(unique_ids) < 2:
+            return None
+
+        placeholders = ",".join("?" for _ in unique_ids)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, soda_name, brand, country, region, city, category,
+                       tried_on, where_tried, contains_caffeine, rating, would_try_again, notes, created_at_utc
+                FROM {USER_PASSPORT_TABLE}
+                WHERE user_id = ? AND id IN ({placeholders})
+                ORDER BY tried_on DESC, created_at_utc DESC, id DESC
+                """,
+                (user_id, *unique_ids),
+            ).fetchall()
+            entries = [self._map_passport_entry(row) for row in rows]
+            if len(entries) < 2:
+                return None
+            if len({self._normalize_passport_key(entry.soda_name, entry.brand) for entry in entries}) != 1:
+                return None
+
+            primary = entries[0]
+            merged_country = self._first_non_empty(entry.country for entry in entries)
+            merged_region = self._first_non_empty(entry.region for entry in entries)
+            merged_city = self._first_non_empty(entry.city for entry in entries)
+            merged_category = self._first_non_empty(entry.category for entry in entries)
+            merged_where = " | ".join(self._unique_ordered(entry.where_tried for entry in entries))
+            merged_notes = "\n\n".join(self._unique_ordered(entry.notes for entry in entries))
+            merged_rating = next((entry.rating for entry in entries if entry.rating is not None), None)
+            merged_would_try_again = any(entry.would_try_again for entry in entries)
+            merged_contains_caffeine = any(entry.contains_caffeine for entry in entries)
+
+            connection.execute(
+                f"""
+                UPDATE {USER_PASSPORT_TABLE}
+                SET country = ?,
+                    region = ?,
+                    city = ?,
+                    category = ?,
+                    tried_on = ?,
+                    where_tried = ?,
+                    contains_caffeine = ?,
+                    rating = ?,
+                    would_try_again = ?,
+                    notes = ?
+                WHERE user_id = ? AND id = ?
+                """,
+                (
+                    merged_country,
+                    merged_region,
+                    merged_city,
+                    merged_category,
+                    primary.tried_on.isoformat(),
+                    merged_where,
+                    int(merged_contains_caffeine),
+                    merged_rating,
+                    int(merged_would_try_again),
+                    merged_notes,
+                    user_id,
+                    primary.id,
+                ),
+            )
+            connection.execute(
+                f"""
+                DELETE FROM {USER_PASSPORT_TABLE}
+                WHERE user_id = ? AND id IN ({placeholders}) AND id != ?
+                """,
+                (user_id, *unique_ids, primary.id),
+            )
+
+        return self.get_passport_entry(user_id, primary.id)
 
     def find_active_wishlist_entry(self, user_id: int, *, soda_name: str, brand: str = "") -> WishlistEntry | None:
         with self._connect() as connection:
@@ -1107,7 +1314,7 @@ class Database:
             rows = connection.execute(
                 f"""
                 SELECT id, soda_name, brand, country, region, city, category,
-                       tried_on, where_tried, rating, would_try_again, notes
+                       tried_on, where_tried, contains_caffeine, rating, would_try_again, notes
                 FROM {USER_PASSPORT_TABLE}
                 WHERE user_id = ?
                 ORDER BY tried_on DESC, created_at_utc DESC, soda_name COLLATE NOCASE ASC
@@ -1128,6 +1335,7 @@ class Database:
                 "category",
                 "tried_on",
                 "where_tried",
+                "contains_caffeine",
                 "rating",
                 "would_try_again",
                 "notes",
@@ -1145,6 +1353,7 @@ class Database:
                     row["category"],
                     row["tried_on"],
                     row["where_tried"],
+                    row["contains_caffeine"],
                     row["rating"],
                     row["would_try_again"],
                     row["notes"],
@@ -1214,7 +1423,7 @@ class Database:
                 f"""
                 SELECT id, soda_id, soda_name, brand, caffeine_mg, recommended_at_local,
                        local_date, reason, chaos_mode, status, projected_total_mg,
-                       was_logged, rejection_summary
+                       was_logged, rejection_summary, feedback
                 FROM {USER_RECOMMENDATION_TABLE}
                 WHERE user_id = ?
                 ORDER BY recommended_at_utc DESC
@@ -1239,6 +1448,7 @@ class Database:
                 "projected_total_mg",
                 "was_logged",
                 "rejection_summary",
+                "feedback",
             ]
         )
         for row in rows:
@@ -1257,6 +1467,7 @@ class Database:
                     row["projected_total_mg"],
                     row["was_logged"],
                     row["rejection_summary"],
+                    row["feedback"],
                 ]
             )
         return buffer.getvalue()
@@ -1439,6 +1650,7 @@ class Database:
                 projected_total_mg REAL,
                 was_logged INTEGER NOT NULL DEFAULT 0,
                 rejection_summary TEXT NOT NULL DEFAULT '',
+                feedback TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY (user_id) REFERENCES user_account(id) ON DELETE CASCADE
             )
             """
@@ -1469,6 +1681,7 @@ class Database:
                 category TEXT NOT NULL DEFAULT '',
                 tried_on TEXT NOT NULL,
                 where_tried TEXT NOT NULL DEFAULT '',
+                contains_caffeine INTEGER NOT NULL DEFAULT 0,
                 rating INTEGER,
                 would_try_again INTEGER NOT NULL DEFAULT 0,
                 notes TEXT NOT NULL DEFAULT '',
@@ -1617,6 +1830,7 @@ class Database:
         projected_expr = "projected_total_mg" if "projected_total_mg" in columns else "NULL"
         was_logged_expr = "was_logged" if "was_logged" in columns else "0"
         rejection_expr = "rejection_summary" if "rejection_summary" in columns else "''"
+        feedback_expr = "feedback" if "feedback" in columns else "''"
         connection.execute(
             f"""
             INSERT INTO {USER_RECOMMENDATION_TABLE} (
@@ -1633,7 +1847,8 @@ class Database:
                 status,
                 projected_total_mg,
                 was_logged,
-                rejection_summary
+                rejection_summary,
+                feedback
             )
             SELECT
                 ?,
@@ -1649,7 +1864,8 @@ class Database:
                 status,
                 {projected_expr},
                 {was_logged_expr},
-                {rejection_expr}
+                {rejection_expr},
+                {feedback_expr}
             FROM {legacy_table}
             """,
             (owner_user_id,),
@@ -1660,6 +1876,8 @@ class Database:
         if not self._should_copy_legacy_table(connection, legacy_table, USER_PASSPORT_TABLE):
             return
 
+        columns = self._table_columns(connection, legacy_table)
+        caffeine_expr = "contains_caffeine" if "contains_caffeine" in columns else "0"
         connection.execute(
             f"""
             INSERT INTO {USER_PASSPORT_TABLE} (
@@ -1672,6 +1890,7 @@ class Database:
                 category,
                 tried_on,
                 where_tried,
+                contains_caffeine,
                 rating,
                 would_try_again,
                 notes,
@@ -1687,6 +1906,7 @@ class Database:
                 category,
                 tried_on,
                 where_tried,
+                {caffeine_expr},
                 rating,
                 would_try_again,
                 notes,
@@ -1938,9 +2158,11 @@ class Database:
             category=row["category"],
             tried_on=date.fromisoformat(row["tried_on"]),
             where_tried=row["where_tried"],
+            contains_caffeine=bool(row["contains_caffeine"]),
             rating=int(row["rating"]) if row["rating"] is not None else None,
             would_try_again=bool(row["would_try_again"]),
             notes=row["notes"],
+            created_at_utc=datetime.fromisoformat(row["created_at_utc"]) if row["created_at_utc"] else None,
         )
 
     def _map_wishlist_entry(self, row: sqlite3.Row) -> WishlistEntry:
@@ -1976,6 +2198,54 @@ class Database:
     def _table_columns(self, connection: sqlite3.Connection, table_name: str) -> set[str]:
         rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
         return {row["name"] for row in rows}
+
+    def _ensure_user_table_columns(self, connection: sqlite3.Connection) -> None:
+        self._ensure_column(connection, USER_RECOMMENDATION_TABLE, "feedback", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column(connection, USER_PASSPORT_TABLE, "contains_caffeine", "INTEGER NOT NULL DEFAULT 0")
+
+    def _ensure_column(self, connection: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
+        if column_name in self._table_columns(connection, table_name):
+            return
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+    @staticmethod
+    def _normalize_passport_key(soda_name: str, brand: str) -> str:
+        return f"{brand.strip().lower()}|{soda_name.strip().lower()}"
+
+    @staticmethod
+    def _first_non_empty(values) -> str:
+        for value in values:
+            cleaned = value.strip()
+            if cleaned:
+                return cleaned
+        return ""
+
+    @staticmethod
+    def _unique_ordered(values) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for value in values:
+            cleaned = value.strip()
+            if not cleaned:
+                continue
+            key = cleaned.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(cleaned)
+        return ordered
+
+    def _build_passport_breakdown(self, values, *, limit: int) -> tuple[PassportBreakdownItem, ...]:
+        counts: dict[str, tuple[str, int]] = {}
+        for raw_value in values:
+            cleaned = raw_value.strip()
+            if not cleaned:
+                continue
+            key = cleaned.casefold()
+            label, count = counts.get(key, (cleaned, 0))
+            counts[key] = (label, count + 1)
+        ordered = sorted(counts.values(), key=lambda item: (-item[1], item[0].casefold()))
+        return tuple(PassportBreakdownItem(label=label, count=count) for label, count in ordered[:limit])
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)

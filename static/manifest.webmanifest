@@ -1,0 +1,53 @@
+{
+  "name": "Soda Picker",
+  "short_name": "Soda Picker",
+  "description": "Local-first soda recommendations, passport tracking, and caffeine-aware logging.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "background_color": "#f4f7fb",
+  "theme_color": "#f4f7fb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Pick a soda",
+      "short_name": "Pick",
+      "url": "/",
+      "description": "Open the dashboard and get a recommendation."
+    },
+    {
+      "name": "Open passport",
+      "short_name": "Passport",
+      "url": "/passport",
+      "description": "Review the sodas you have already tried."
+    },
+    {
+      "name": "Log activity",
+      "short_name": "Activity",
+      "url": "/activity",
+      "description": "Log a soda or other caffeine entry."
+    }
+  ]
+}

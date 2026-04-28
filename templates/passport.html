@@ -48,6 +48,45 @@
     </article>
   </section>
 
+  <section class="stats-grid">
+    <article class="stat-card panel">
+      <p class="stat-label">Top countries</p>
+      {% if passport_insights and passport_insights.countries %}
+        <div class="support-list">
+          {% for item in passport_insights.countries %}
+            <p><strong>{{ item.label }}</strong> · {{ item.count }}</p>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="stat-note">No country stats yet.</p>
+      {% endif %}
+    </article>
+    <article class="stat-card panel">
+      <p class="stat-label">Top brands</p>
+      {% if passport_insights and passport_insights.brands %}
+        <div class="support-list">
+          {% for item in passport_insights.brands %}
+            <p><strong>{{ item.label }}</strong> · {{ item.count }}</p>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="stat-note">No brand stats yet.</p>
+      {% endif %}
+    </article>
+    <article class="stat-card panel">
+      <p class="stat-label">Top categories</p>
+      {% if passport_insights and passport_insights.categories %}
+        <div class="support-list">
+          {% for item in passport_insights.categories %}
+            <p><strong>{{ item.label }}</strong> · {{ item.count }}</p>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="stat-note">No category stats yet.</p>
+      {% endif %}
+    </article>
+  </section>
+
   <section class="dashboard-grid">
     <div class="column-main">
       <section class="panel content-panel">
@@ -78,6 +117,9 @@
                     <span class="badge {% if entry.would_try_again %}accent{% else %}warning{% endif %} small">
                       {% if entry.would_try_again %}Would try again{% else %}One and done{% endif %}
                     </span>
+                    {% if entry.contains_caffeine %}
+                      <span class="badge tone-peach small">Contains caffeine</span>
+                    {% endif %}
                   </div>
                 </summary>
                 <form action="/passport/{{ entry.id }}/update" method="post" class="stack-form">
@@ -124,6 +166,11 @@
                     <span>Where you had it</span>
                     <input type="text" name="where_tried" value="{{ entry.where_tried }}" placeholder="Store, trip, restaurant, city">
                   </label>
+                  <input type="hidden" name="contains_caffeine" value="false">
+                  <label class="inline-check">
+                    <input type="checkbox" name="contains_caffeine" value="true" {% if entry.contains_caffeine %}checked{% endif %}>
+                    <span>Contains caffeine</span>
+                  </label>
                   <label class="inline-check">
                     <input type="checkbox" name="would_try_again" value="true" {% if entry.would_try_again %}checked{% endif %}>
                     <span>I would drink this again</span>
@@ -139,6 +186,9 @@
                 <form action="/wishlist/from-passport" method="post" class="inline-form delete-form">
                   <input type="hidden" name="entry_id" value="{{ entry.id }}">
                   <button type="submit" class="button tertiary">Add to wishlist</button>
+                </form>
+                <form action="/passport/{{ entry.id }}/own" method="post" class="inline-form delete-form">
+                  <button type="submit" class="button secondary">Owned now</button>
                 </form>
                 <form action="/passport/{{ entry.id }}/delete" method="post" class="inline-form delete-form">
                   <button type="submit" class="button danger">Delete entry</button>
@@ -204,6 +254,11 @@
             <span>Where you had it</span>
             <input type="text" name="where_tried" placeholder="Convenience store, trip, soda shop">
           </label>
+          <input type="hidden" name="contains_caffeine" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="contains_caffeine" value="true">
+            <span>Contains caffeine</span>
+          </label>
           <label class="inline-check">
             <input type="checkbox" name="would_try_again" value="true">
             <span>I would drink this again</span>
@@ -214,6 +269,38 @@
           </label>
           <button type="submit" class="button">Add to passport</button>
         </form>
+      </section>
+
+      <section class="panel content-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Duplicate cleanup</p>
+            <h2>Merge repeated passport entries</h2>
+          </div>
+        </div>
+        {% if passport_duplicate_groups %}
+          <ul class="history-list">
+            {% for group in passport_duplicate_groups %}
+              <li class="history-item">
+                <div>
+                  <strong>{{ group.display_name }}</strong>
+                  <p>{{ group.count }} entries logged for the same soda</p>
+                  <p>
+                    {% for duplicate_entry in group.entries %}
+                      {{ duplicate_entry.tried_on_label }}{% if not loop.last %} · {% endif %}
+                    {% endfor %}
+                  </p>
+                </div>
+                <form action="/passport/merge-duplicates" method="post" class="inline-form">
+                  <input type="hidden" name="entry_ids" value="{{ group.ids_csv }}">
+                  <button type="submit" class="button tertiary small-button">Merge {{ group.count }} entries</button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-copy">No duplicate passport entries detected right now.</p>
+        {% endif %}
       </section>
 
       <section class="panel content-panel">

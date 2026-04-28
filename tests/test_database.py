@@ -5,6 +5,7 @@ import unittest
 from datetime import date, datetime
 from pathlib import Path
 
+from app.catalog import DEFAULT_ESTIMATED_CAFFEINE_MG
 from app.database import Database
 from app.models import CatalogItem, RecommendationResult, Soda, SodaState
 
@@ -57,6 +58,36 @@ class DatabaseTests(unittest.TestCase):
 
         self.assertTrue(self.database.delete_entry(self.user.id, entry.id))
         self.assertEqual(self.database.get_today_entries(self.user.id, self.local_now), [])
+
+    def test_manual_soda_entry_can_use_estimated_or_exact_caffeine(self) -> None:
+        self.database.log_manual_soda_entry(
+            self.user.id,
+            soda_name="Mystery Cola",
+            brand="Gifted",
+            local_now=self.local_now,
+            contains_caffeine=True,
+            caffeine_mg=None,
+            notes="Handed to me at lunch",
+        )
+        self.database.log_manual_soda_entry(
+            self.user.id,
+            soda_name="Orange Fizz",
+            brand="",
+            local_now=self.local_now.replace(hour=14),
+            contains_caffeine=False,
+            caffeine_mg=None,
+            notes="Definitely caffeine-free",
+        )
+
+        entries = self.database.get_recent_entries(self.user.id, limit=10)
+        self.assertEqual(entries[0].entry_type, "manual_soda")
+        self.assertEqual(entries[0].source_label, "Manual soda")
+        self.assertEqual(entries[0].caffeine_mg, 0)
+
+        estimated_entry = entries[1]
+        self.assertEqual(estimated_entry.entry_type, "manual_soda")
+        self.assertEqual(estimated_entry.brand, "Gifted")
+        self.assertEqual(estimated_entry.caffeine_mg, DEFAULT_ESTIMATED_CAFFEINE_MG)
 
     def test_soda_state_and_setting_overrides_persist(self) -> None:
         self.database.save_soda_state(
@@ -147,6 +178,15 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(history[0].was_logged)
         self.assertEqual(self.database.get_recent_recommendations(self.other_user.id, limit=5), [])
 
+        self.assertTrue(self.database.set_recommendation_feedback(self.user.id, recommendation_id, "good_pick"))
+        history = self.database.get_recent_recommendations(self.user.id, limit=5)
+        self.assertEqual(history[0].feedback, "good_pick")
+        self.assertEqual(history[0].feedback_label, "Good pick")
+
+        exported = self.database.export_recommendation_csv(self.user.id)
+        self.assertIn("feedback", exported)
+        self.assertIn("good_pick", exported)
+
     def test_passport_entries_can_be_logged_updated_exported_and_deleted(self) -> None:
         self.database.add_passport_entry(
             self.user.id,
@@ -158,6 +198,7 @@ class DatabaseTests(unittest.TestCase):
             category="Fruit soda",
             tried_on=date(2026, 3, 1),
             where_tried="Corner store",
+            contains_caffeine=False,
             rating=4,
             would_try_again=True,
             notes="Bright bubblegum thing",
@@ -172,6 +213,7 @@ class DatabaseTests(unittest.TestCase):
             category="Marble bottle",
             tried_on=date(2026, 3, 10),
             where_tried="Arcade",
+            contains_caffeine=False,
             rating=None,
             would_try_again=False,
             notes="Fun bottle",
@@ -201,6 +243,7 @@ class DatabaseTests(unittest.TestCase):
                 category="Lemon-lime",
                 tried_on=date(2026, 3, 10),
                 where_tried="Arcade",
+                contains_caffeine=True,
                 rating=5,
                 would_try_again=True,
                 notes="Better than expected",
@@ -213,6 +256,7 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(updated.city, "Akihabara")
         self.assertEqual(updated.rating, 5)
         self.assertTrue(updated.would_try_again)
+        self.assertTrue(updated.contains_caffeine)
 
         exported = self.database.export_passport_csv(self.user.id)
         self.assertIn("soda_name,brand,country", exported)
@@ -221,6 +265,78 @@ class DatabaseTests(unittest.TestCase):
         self.assertTrue(self.database.delete_passport_entry(self.user.id, ramune.id))
         remaining = self.database.list_passport_entries(self.user.id, limit=10)
         self.assertEqual(len(remaining), 1)
+
+    def test_passport_duplicate_groups_can_be_merged_and_summarized(self) -> None:
+        first_id = self.database.add_passport_entry(
+            self.user.id,
+            soda_name="Ramune",
+            brand="Hata",
+            country="Japan",
+            region="Tokyo",
+            city="Akihabara",
+            category="Lemon-lime",
+            tried_on=date(2026, 3, 10),
+            where_tried="Arcade",
+            contains_caffeine=False,
+            rating=5,
+            would_try_again=True,
+            notes="First bottle",
+        )
+        second_id = self.database.add_passport_entry(
+            self.user.id,
+            soda_name="Ramune",
+            brand="Hata",
+            country="Japan",
+            region="Osaka",
+            city="Osaka",
+            category="Marble bottle",
+            tried_on=date(2026, 3, 12),
+            where_tried="Street shop",
+            contains_caffeine=True,
+            rating=None,
+            would_try_again=False,
+            notes="Second bottle",
+        )
+        self.database.add_passport_entry(
+            self.user.id,
+            soda_name="Inca Kola",
+            brand="Coca-Cola",
+            country="Peru",
+            region="Lima Province",
+            city="Lima",
+            category="Fruit soda",
+            tried_on=date(2026, 3, 14),
+            where_tried="Corner store",
+            contains_caffeine=False,
+            rating=4,
+            would_try_again=True,
+            notes="Distinct entry",
+        )
+
+        duplicate_groups = self.database.list_passport_duplicate_groups(self.user.id, limit=10)
+        self.assertEqual(len(duplicate_groups), 1)
+        self.assertEqual(duplicate_groups[0].display_name, "Hata Ramune")
+        self.assertEqual(duplicate_groups[0].count, 2)
+
+        insights = self.database.get_passport_insights(self.user.id, limit=3)
+        self.assertEqual(insights.countries[0].label, "Japan")
+        self.assertEqual(insights.countries[0].count, 2)
+        self.assertEqual(insights.brands[0].label, "Hata")
+        self.assertEqual(insights.categories[0].count, 1)
+
+        merged = self.database.merge_passport_entries(self.user.id, [first_id, second_id])
+        self.assertIsNotNone(merged)
+        assert merged is not None
+        self.assertEqual(merged.display_name, "Hata Ramune")
+        self.assertEqual(merged.city, "Osaka")
+        self.assertTrue(merged.contains_caffeine)
+        self.assertTrue(merged.would_try_again)
+        self.assertIn("First bottle", merged.notes)
+        self.assertIn("Second bottle", merged.notes)
+
+        entries = self.database.list_passport_entries(self.user.id, limit=10)
+        self.assertEqual(len(entries), 2)
+        self.assertIsNotNone(self.database.find_passport_entry(self.user.id, soda_name="Ramune", brand="Hata"))
 
     def test_wishlist_entries_can_be_added_updated_exported_and_deleted(self) -> None:
         first_id = self.database.add_wishlist_entry(

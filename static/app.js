@@ -26,6 +26,91 @@ if (clock) {
 
 const reminderConfig = document.getElementById("reminder-config");
 const permissionButton = document.getElementById("notification-permission");
+const installBanner = document.getElementById("install-banner");
+const installBannerTitle = document.getElementById("install-banner-title");
+const installBannerCopy = document.getElementById("install-banner-copy");
+const installBannerAction = document.getElementById("install-banner-action");
+const installBannerDismiss = document.getElementById("install-banner-dismiss");
+const INSTALL_DISMISS_KEY = "soda-picker-install-dismissed-v1";
+
+const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+document.body.classList.toggle("standalone-app", isStandalone);
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js").catch(() => {
+      // Ignore service worker registration failures and keep the app usable.
+    });
+  });
+}
+
+let deferredInstallPrompt = null;
+
+const showInstallBanner = ({ title, copy, buttonLabel, onAction }) => {
+  if (!installBanner || !installBannerTitle || !installBannerCopy || !installBannerAction || !installBannerDismiss) {
+    return;
+  }
+  if (isStandalone || window.localStorage.getItem(INSTALL_DISMISS_KEY) === "true") {
+    return;
+  }
+
+  installBannerTitle.textContent = title;
+  installBannerCopy.textContent = copy;
+  installBannerAction.textContent = buttonLabel;
+  installBanner.hidden = false;
+
+  installBannerAction.onclick = onAction;
+  installBannerDismiss.onclick = () => {
+    window.localStorage.setItem(INSTALL_DISMISS_KEY, "true");
+    installBanner.hidden = true;
+  };
+};
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  showInstallBanner({
+    title: "Install Soda Picker",
+    copy: "Install Soda Picker so it launches in its own window and feels closer to a native app.",
+    buttonLabel: "Install app",
+    onAction: async () => {
+      if (!deferredInstallPrompt) {
+        return;
+      }
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if (installBanner) {
+        installBanner.hidden = true;
+      }
+    },
+  });
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  if (installBanner) {
+    installBanner.hidden = true;
+  }
+  document.body.classList.add("standalone-app");
+});
+
+const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+const isSafari = /safari/i.test(window.navigator.userAgent) && !/crios|fxios|edgios/i.test(window.navigator.userAgent);
+
+if (isIos && isSafari && !isStandalone) {
+  showInstallBanner({
+    title: "Add Soda Picker to your Home Screen",
+    copy: "In Safari, tap Share, then choose Add to Home Screen. It will open in standalone mode like an app.",
+    buttonLabel: "Got it",
+    onAction: () => {
+      window.localStorage.setItem(INSTALL_DISMISS_KEY, "true");
+      if (installBanner) {
+        installBanner.hidden = true;
+      }
+    },
+  });
+}
 
 const getTimeParts = (timezone) => {
   const formatter = new Intl.DateTimeFormat("en-US", {

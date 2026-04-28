@@ -64,7 +64,7 @@
             <tbody>
               {% for item in catalog_items %}
                 <tr>
-                  <td>
+                  <td data-label="Soda">
                     <strong>{{ item.soda.display_name }}</strong>
                     <div class="badge-row compact">
                       {% for badge in item.soda.badge_labels %}
@@ -83,15 +83,15 @@
                       {% endif %}
                     </div>
                   </td>
-                  <td>{{ item.soda.caffeine_label }}</td>
-                  <td>{{ item.soda.category }}</td>
-                  <td>
+                  <td data-label="Caffeine">{{ item.soda.caffeine_label }}</td>
+                  <td data-label="Category">{{ item.soda.category }}</td>
+                  <td data-label="Status">
                     <p>{{ item.soda.priority }} priority</p>
                     {% if item.soda.tags %}
                       <p>{{ item.soda.tags|join(", ") }}</p>
                     {% endif %}
                   </td>
-                  <td class="catalog-controls">
+                  <td class="catalog-controls" data-label="Controls">
                     <div class="table-control-stack">
                       <form action="/catalog/state" method="post" class="stack-form compact catalog-state-form">
                         <input type="hidden" name="soda_id" value="{{ item.id }}">

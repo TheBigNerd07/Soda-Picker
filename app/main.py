@@ -15,13 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .catalog import SodaCatalog
+from .catalog import DEFAULT_ESTIMATED_CAFFEINE_MG, SodaCatalog
 from .config import Settings, parse_bool
 from .database import Database
 from .models import (
     BackupFile,
     CatalogItem,
     PREFERENCE_NEUTRAL,
+    RECOMMENDATION_FEEDBACK_OPTIONS,
+    Soda,
     PassportSummary,
     SodaState,
     UserAccount,
@@ -59,6 +61,7 @@ catalog = SodaCatalog(base_settings.csv_path)
 database = Database(base_settings.database_path)
 settings_store = SettingsStore(base_settings, database)
 engine = RecommendationEngine()
+RECOMMENDATION_FEEDBACK_LABEL_MAP = dict(RECOMMENDATION_FEEDBACK_OPTIONS)
 
 
 def _format_number(value: float | int | None) -> str:
@@ -117,7 +120,7 @@ if base_settings.access_control_enabled:
         AccessControlMiddleware,
         mode=base_settings.access_control_mode,
         secret=base_settings.access_control_secret,
-        exempt_paths={"/healthz", "/login", "/logout"},
+        exempt_paths={"/healthz", "/login", "/logout", "/manifest.webmanifest", "/service-worker.js"},
         identity_validator=database.user_exists,
     )
 
@@ -198,6 +201,25 @@ def _parse_wishlist_status(raw_value: str | None) -> str:
     if cleaned in {"active", "found", "archived"}:
         return cleaned
     return "active"
+
+
+def _parse_recommendation_feedback(raw_value: str | None) -> str:
+    cleaned = (raw_value or "").strip().lower()
+    if cleaned not in RECOMMENDATION_FEEDBACK_LABEL_MAP:
+        raise ValueError("Choose a valid recommendation feedback option.")
+    return cleaned
+
+
+def _find_catalog_match(*, soda_name: str, brand: str = "") -> Soda | None:
+    normalized_name = soda_name.strip().casefold()
+    normalized_brand = brand.strip().casefold()
+    normalized_display = f"{brand.strip()} {soda_name.strip()}".strip().casefold()
+    for soda in catalog.list_sodas():
+        if soda.name.strip().casefold() == normalized_name and soda.brand.strip().casefold() == normalized_brand:
+            return soda
+        if soda.display_name.strip().casefold() == normalized_display:
+            return soda
+    return None
 
 
 def _current_user(request: Request) -> UserAccount | None:
@@ -373,6 +395,7 @@ def _build_common_context(
         "today_entries": today_entries,
         "daily_total": daily_total,
         "recent_recommendations": recent_recommendations,
+        "recommendation_feedback_options": RECOMMENDATION_FEEDBACK_OPTIONS,
         "backup_files": backup_files,
         "override_keys": override_keys,
         "passport_summary": passport_summary,
@@ -620,6 +643,24 @@ async def log_consumption(request: Request) -> RedirectResponse:
     return _redirect_with_flash("/", f"Logged {soda.display_name}.")
 
 
+@app.post("/recommendations/{recommendation_id}/feedback")
+async def save_recommendation_feedback(request: Request, recommendation_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save recommendation feedback.")
+
+    form = await request.form()
+    return_to = _safe_next_path(str(form.get("return_to", "/activity")))
+    try:
+        feedback = _parse_recommendation_feedback(str(form.get("feedback", "")))
+    except ValueError as exc:
+        return _redirect_with_flash(return_to, str(exc))
+
+    if not database.set_recommendation_feedback(user.id, recommendation_id, feedback):
+        return _redirect_with_flash(return_to, "That recommendation no longer exists.")
+    return _redirect_with_flash(return_to, f"Saved feedback: {RECOMMENDATION_FEEDBACK_LABEL_MAP[feedback]}.")
+
+
 @app.post("/manual-entry")
 async def log_manual_entry(request: Request) -> RedirectResponse:
     settings, user = _settings_for_request(request)
@@ -640,6 +681,37 @@ async def log_manual_entry(request: Request) -> RedirectResponse:
         notes=str(form.get("notes", "")).strip(),
     )
     return _redirect_with_flash("/activity", f"Logged manual caffeine entry for {name}.")
+
+
+@app.post("/manual-soda-entry")
+async def log_manual_soda_entry(request: Request) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to log sodas.")
+
+    form = await request.form()
+    local_now = _parse_local_datetime(str(form.get("consumed_at_local", "")), settings, settings.local_now())
+    soda_name = str(form.get("soda_name", "")).strip()
+    if not soda_name:
+        return _redirect_with_flash("/activity", "Manual soda entry needs a soda name.")
+
+    brand = str(form.get("brand", "")).strip()
+    contains_caffeine = parse_bool(form.get("contains_caffeine"), False)
+    caffeine_raw = str(form.get("caffeine_mg", "")).strip()
+    caffeine_value = float(caffeine_raw) if caffeine_raw else None
+    database.log_manual_soda_entry(
+        user.id,
+        soda_name=soda_name,
+        brand=brand,
+        local_now=local_now,
+        contains_caffeine=contains_caffeine,
+        caffeine_mg=caffeine_value,
+        notes=str(form.get("notes", "")).strip(),
+    )
+    message = f"Logged manual soda entry for {soda_name}."
+    if contains_caffeine and caffeine_value is None:
+        message += f" Used the default {DEFAULT_ESTIMATED_CAFFEINE_MG:g} mg estimate."
+    return _redirect_with_flash("/activity", message)
 
 
 @app.get("/activity", response_class=HTMLResponse)
@@ -833,6 +905,8 @@ async def passport_page(request: Request) -> HTMLResponse:
     context.update(
         {
             "passport_entries": database.list_passport_entries(user.id, limit=300) if user is not None else [],
+            "passport_duplicate_groups": database.list_passport_duplicate_groups(user.id, limit=12) if user is not None else [],
+            "passport_insights": database.get_passport_insights(user.id, limit=5) if user is not None else None,
             "passport_entry_date": local_now.date().isoformat(),
         }
     )
@@ -866,6 +940,7 @@ async def add_passport_entry(request: Request) -> RedirectResponse:
         category=str(form.get("category", "")).strip(),
         tried_on=tried_on,
         where_tried=str(form.get("where_tried", "")).strip(),
+        contains_caffeine=parse_bool(form.get("contains_caffeine"), False),
         rating=rating,
         would_try_again=parse_bool(form.get("would_try_again"), False),
         notes=str(form.get("notes", "")).strip(),
@@ -904,6 +979,7 @@ async def update_passport_entry(request: Request, entry_id: int) -> RedirectResp
         category=str(form.get("category", "")).strip(),
         tried_on=tried_on,
         where_tried=str(form.get("where_tried", "")).strip(),
+        contains_caffeine=parse_bool(form.get("contains_caffeine"), False),
         rating=rating,
         would_try_again=parse_bool(form.get("would_try_again"), False),
         notes=str(form.get("notes", "")).strip(),
@@ -922,6 +998,72 @@ async def delete_passport_entry(request: Request, entry_id: int) -> RedirectResp
     if not database.delete_passport_entry(user.id, entry_id):
         return _redirect_with_flash("/passport", "That passport entry no longer exists.")
     return _redirect_with_flash("/passport", "Deleted the soda passport entry.")
+
+
+@app.post("/passport/merge-duplicates")
+async def merge_passport_duplicates(request: Request) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to merge passport entries.")
+
+    form = await request.form()
+    raw_ids = str(form.get("entry_ids", "")).strip()
+    try:
+        entry_ids = [int(part) for part in raw_ids.split(",") if part.strip()]
+    except ValueError:
+        return _redirect_with_flash("/passport", "Could not read the duplicate entry list.")
+
+    merged = database.merge_passport_entries(user.id, entry_ids)
+    if merged is None:
+        return _redirect_with_flash("/passport", "Those passport entries could not be merged.")
+    return _redirect_with_flash("/passport", f"Merged duplicate entries into {merged.display_name}.")
+
+
+@app.post("/passport/{entry_id}/own")
+async def own_passport_soda(request: Request, entry_id: int) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to mark passport sodas as owned.")
+
+    passport_entry = database.get_passport_entry(user.id, entry_id)
+    if passport_entry is None:
+        return _redirect_with_flash("/passport", "That passport entry no longer exists.")
+
+    soda = _find_catalog_match(soda_name=passport_entry.soda_name, brand=passport_entry.brand)
+    backup_path: Path | None = None
+    if soda is None:
+        if not user.is_admin:
+            return _redirect_with_flash(
+                "/passport",
+                "That soda is not in the shared catalog yet. An admin has to add it before it can become owned inventory.",
+            )
+        backup_path = _backup_catalog_file(settings)
+        try:
+            soda = catalog.add_soda(
+                name=passport_entry.soda_name,
+                brand=passport_entry.brand,
+                category=passport_entry.category,
+                contains_caffeine=passport_entry.contains_caffeine,
+                is_diet=False,
+                tags=(),
+                priority=2 if passport_entry.would_try_again else 1,
+            )
+        except ValueError as exc:
+            return _redirect_with_flash("/passport", f"Could not add soda: {exc}")
+
+    current_state = database.get_soda_state_map(user.id).get(soda.id, SodaState(soda_id=soda.id, preference=PREFERENCE_NEUTRAL))
+    database.save_soda_state(
+        user.id,
+        soda_id=soda.id,
+        is_available=True,
+        preference=current_state.preference,
+        temp_ban_until=current_state.temp_ban_until,
+    )
+
+    message = f"Marked {soda.display_name} as owned in your catalog inventory."
+    if backup_path is not None:
+        message += f" Added it to the shared catalog too. Backup saved as {backup_path.name}."
+    return _redirect_with_flash("/passport", message)
 
 
 @app.post("/activity/{entry_id}/update")
@@ -956,6 +1098,79 @@ async def delete_entry(request: Request, entry_id: int) -> RedirectResponse:
     if not database.delete_entry(user.id, entry_id):
         return _redirect_with_flash("/activity", "That log entry no longer exists.")
     return _redirect_with_flash("/activity", "Deleted the log entry.")
+
+
+@app.post("/activity/{entry_id}/to-passport")
+async def add_activity_entry_to_passport(request: Request, entry_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save passport entries.")
+
+    entry = database.get_entry(user.id, entry_id)
+    if entry is None or entry.entry_type != "manual_soda":
+        return _redirect_with_flash("/activity", "That manual soda entry no longer exists.")
+
+    tried_on = entry.consumed_at_local.date()
+    existing = database.find_passport_entry(
+        user.id,
+        soda_name=entry.soda_name,
+        brand=entry.brand,
+        tried_on=tried_on,
+    )
+    if existing is not None:
+        return _redirect_with_flash("/activity", f"{existing.display_name} is already in your passport for that day.")
+
+    database.add_passport_entry(
+        user.id,
+        soda_name=entry.soda_name,
+        brand=entry.brand,
+        country="",
+        region="",
+        city="",
+        category="",
+        tried_on=tried_on,
+        where_tried="",
+        contains_caffeine=entry.caffeine_mg > 0,
+        rating=None,
+        would_try_again=False,
+        notes=entry.notes,
+    )
+    return _redirect_with_flash("/activity", f"Added {entry.display_name} to your passport.")
+
+
+@app.post("/activity/{entry_id}/to-catalog")
+async def add_activity_entry_to_catalog(request: Request, entry_id: int) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in as an admin to add shared catalog sodas.")
+    if not user.is_admin:
+        return _redirect_with_flash("/activity", "Only admins can add shared sodas to the catalog CSV.")
+
+    entry = database.get_entry(user.id, entry_id)
+    if entry is None or entry.entry_type != "manual_soda":
+        return _redirect_with_flash("/activity", "That manual soda entry no longer exists.")
+
+    existing = _find_catalog_match(soda_name=entry.soda_name, brand=entry.brand)
+    if existing is not None:
+        return _redirect_with_flash("/activity", f"{existing.display_name} is already in the shared catalog.")
+
+    backup_path = _backup_catalog_file(settings)
+    try:
+        soda = catalog.add_soda(
+            name=entry.soda_name,
+            brand=entry.brand,
+            category="",
+            contains_caffeine=entry.caffeine_mg > 0,
+            is_diet=False,
+            tags=(),
+        )
+    except ValueError as exc:
+        return _redirect_with_flash("/activity", f"Could not add soda: {exc}")
+
+    message = f"Added {soda.display_name} to the shared catalog."
+    if backup_path is not None:
+        message += f" Backup saved as {backup_path.name}."
+    return _redirect_with_flash("/activity", message)
 
 
 @app.get("/catalog", response_class=HTMLResponse)
@@ -1414,6 +1629,23 @@ async def export_reminder_calendar(request: Request) -> Response:
         content=payload,
         media_type="text/calendar",
         headers={"Content-Disposition": 'attachment; filename="soda-picker-reminder.ics"'},
+    )
+
+
+@app.get("/manifest.webmanifest")
+async def web_app_manifest() -> Response:
+    return FileResponse(
+        Path("static/manifest.webmanifest"),
+        media_type="application/manifest+json",
+    )
+
+
+@app.get("/service-worker.js")
+async def service_worker() -> Response:
+    return FileResponse(
+        Path("static/service-worker.js"),
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
     )
 
 

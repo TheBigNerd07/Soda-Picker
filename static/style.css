@@ -3337,3 +3337,348 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+/* Mobile app shell and PWA install layer */
+
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+.install-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.9rem 1rem;
+  align-items: center;
+  padding: 1rem 1.15rem;
+  border-radius: 24px;
+}
+
+.install-banner[hidden] {
+  display: none;
+}
+
+.install-banner-copy {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.install-banner h2 {
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+}
+
+.install-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
+}
+
+@media (max-width: 980px) {
+  .table-scroll {
+    overflow: visible;
+  }
+
+  .catalog-table {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .catalog-table thead {
+    display: none;
+  }
+
+  .catalog-table,
+  .catalog-table tbody,
+  .catalog-table tr,
+  .catalog-table td {
+    display: block;
+  }
+
+  .catalog-table tr {
+    margin-bottom: 0.9rem;
+    padding: 0.95rem 1rem;
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.68);
+    box-shadow: 0 8px 20px rgba(19, 39, 70, 0.05);
+  }
+
+  .catalog-table tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .catalog-table td {
+    padding: 0.55rem 0;
+    border: 0;
+  }
+
+  .catalog-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .catalog-controls .table-control-stack {
+    width: 100%;
+  }
+
+  .catalog-state-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  :root {
+    --mobile-nav-height: 7rem;
+  }
+
+  .shell {
+    width: calc(100% - 1rem);
+    padding-top: max(0.65rem, env(safe-area-inset-top));
+    padding-bottom: calc(var(--mobile-nav-height) + 1.2rem + env(safe-area-inset-bottom));
+  }
+
+  .site-header {
+    position: sticky;
+    top: max(0.4rem, env(safe-area-inset-top));
+    padding: 0.95rem;
+    border-radius: 26px;
+  }
+
+  .header-top {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+    align-items: start;
+  }
+
+  .brand-lockup {
+    align-items: center;
+  }
+
+  .brand-subtitle {
+    max-width: none;
+    font-size: 0.82rem;
+  }
+
+  .header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+    width: 100%;
+  }
+
+  .header-actions .status-pill,
+  .header-actions .button,
+  .header-actions .auth-form {
+    width: 100%;
+    margin: 0;
+  }
+
+  .header-actions .auth-form .button {
+    width: 100%;
+  }
+
+  .header-actions .action-pill {
+    display: none;
+  }
+
+  .status-pill-wide {
+    min-width: 0;
+    grid-column: 1 / -1;
+  }
+
+  .page-header,
+  .hero-shell,
+  .recommendation-showcase,
+  .content-panel,
+  .list-panel,
+  .sticky-panel,
+  .stat-card {
+    border-radius: 24px;
+  }
+
+  .page-header {
+    padding-top: 0.25rem;
+  }
+
+  .page-header h1,
+  .hero-copy h1 {
+    max-width: none;
+    font-size: clamp(2rem, 10vw, 2.85rem);
+    line-height: 0.96;
+  }
+
+  .site-nav {
+    position: fixed;
+    left: max(0.5rem, env(safe-area-inset-left));
+    right: max(0.5rem, env(safe-area-inset-right));
+    bottom: max(0.5rem, env(safe-area-inset-bottom));
+    z-index: 60;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.45rem;
+    padding: 0.45rem;
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 18px 34px rgba(19, 39, 70, 0.18);
+    backdrop-filter: blur(18px);
+  }
+
+  .site-nav a {
+    min-height: 3.1rem;
+    padding: 0.65rem 0.45rem;
+    font-size: 0.8rem;
+    line-height: 1.1;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .dashboard-grid,
+  .dashboard-hero,
+  .settings-grid,
+  .stats-grid,
+  .overview-strip,
+  .form-grid,
+  .training-grid,
+  .training-summary,
+  .feature-list,
+  .detail-list {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-shell-layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .picker-stage-embedded {
+    padding-left: 0;
+    padding-top: 1rem;
+    border-left: none;
+    border-top: 1px solid rgba(23, 43, 77, 0.08);
+  }
+
+  .recommendation-layout,
+  .history-item,
+  .entry-editor summary,
+  .auth-banner,
+  .page-header-layout,
+  .section-heading,
+  .install-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header-actions,
+  .header-actions,
+  .recommendation-actions,
+  .compact-actions,
+  .button-row,
+  .action-grid,
+  .install-banner-actions {
+    justify-content: stretch;
+  }
+
+  .button,
+  .page-header-actions .button,
+  .compact-actions .button,
+  .button-row .button,
+  .action-grid .button {
+    width: 100%;
+  }
+
+  .recommendation-actions .inline-form,
+  .compact-actions .inline-form,
+  .button-row .inline-form,
+  .action-grid .inline-form,
+  .install-banner-actions .button {
+    width: 100%;
+  }
+
+  .art-stage {
+    min-height: 11rem;
+  }
+
+  .soda-can {
+    width: 9.5rem;
+    height: 12.5rem;
+  }
+
+  .history-meta {
+    justify-items: start;
+    gap: 0.45rem;
+  }
+
+  .side-card-header {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .shell {
+    width: calc(100% - 0.75rem);
+    padding-bottom: calc(var(--mobile-nav-height) + 0.95rem + env(safe-area-inset-bottom));
+  }
+
+  .site-header,
+  .auth-banner,
+  .flash,
+  .page-header,
+  .hero-shell,
+  .recommendation-showcase,
+  .content-panel,
+  .list-panel,
+  .sticky-panel,
+  .stat-card,
+  .install-banner {
+    padding: 0.95rem;
+  }
+
+  .header-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-mark {
+    font-size: clamp(1.65rem, 8vw, 2.2rem);
+  }
+
+  .page-header h1,
+  .hero-copy h1 {
+    font-size: clamp(1.8rem, 10vw, 2.3rem);
+  }
+
+  .site-nav {
+    gap: 0.35rem;
+    padding: 0.35rem;
+  }
+
+  .site-nav a {
+    min-height: 2.9rem;
+    font-size: 0.76rem;
+  }
+
+  .recommendation-showcase .badge-row {
+    gap: 0.45rem;
+  }
+
+  .catalog-table tr {
+    padding: 0.85rem 0.9rem;
+  }
+}
+
+.standalone-app .shell {
+  padding-top: max(0.45rem, env(safe-area-inset-top));
+}
+
+.standalone-app .site-header {
+  top: max(0.2rem, env(safe-area-inset-top));
+}

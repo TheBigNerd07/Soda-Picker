@@ -2,8 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f4f7fb">
+    <meta name="application-name" content="Soda Picker">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Soda Picker">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
     <title>{% block title %}Soda Picker{% endblock %}</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/icons/app-icon.svg') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', path='/icons/apple-touch-icon.png') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -80,6 +90,19 @@
           <a class="button" href="{{ access_login_url }}">Log in to edit</a>
         </section>
       {% endif %}
+      <section id="install-banner" class="install-banner panel" hidden>
+        <div class="install-banner-copy">
+          <p class="eyebrow">Home screen app</p>
+          <h2 id="install-banner-title">Install Soda Picker</h2>
+          <p id="install-banner-copy" class="helper-text">
+            Add Soda Picker to your home screen so it opens in standalone mode like an app.
+          </p>
+        </div>
+        <div class="install-banner-actions">
+          <button id="install-banner-action" type="button" class="button secondary small-button">Install app</button>
+          <button id="install-banner-dismiss" type="button" class="button tertiary small-button">Not now</button>
+        </div>
+      </section>
       <div class="page-stack">
         {% block content %}{% endblock %}
       </div>

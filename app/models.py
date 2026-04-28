@@ -19,6 +19,15 @@ WISHLIST_STATUS_CHOICES = {
     WISHLIST_STATUS_FOUND,
     WISHLIST_STATUS_ARCHIVED,
 }
+RECOMMENDATION_FEEDBACK_OPTIONS = (
+    ("good_pick", "Good pick"),
+    ("bad_pick", "Bad pick"),
+    ("too_sweet", "Too sweet"),
+    ("too_much_caffeine", "Too much caffeine"),
+    ("not_in_the_mood", "Not in the mood"),
+)
+RECOMMENDATION_FEEDBACK_LABELS = dict(RECOMMENDATION_FEEDBACK_OPTIONS)
+RECOMMENDATION_FEEDBACK_CHOICES = {value for value, _label in RECOMMENDATION_FEEDBACK_OPTIONS}
 
 
 def format_clock_time(value: datetime | time) -> str:
@@ -161,7 +170,13 @@ class ConsumptionEntry:
     def source_label(self) -> str:
         if self.entry_type == "manual":
             return "Manual caffeine"
+        if self.entry_type == "manual_soda":
+            return "Manual soda"
         return "Catalog soda"
+
+    @property
+    def entry_type_label(self) -> str:
+        return self.source_label
 
     @property
     def datetime_local_input_value(self) -> str:
@@ -207,6 +222,7 @@ class RecommendationHistoryEntry:
     projected_total_mg: float | None
     was_logged: bool
     rejection_summary: str = ""
+    feedback: str = ""
 
     @property
     def display_name(self) -> str:
@@ -217,6 +233,10 @@ class RecommendationHistoryEntry:
     @property
     def time_label(self) -> str:
         return format_clock_time(self.recommended_at_local)
+
+    @property
+    def feedback_label(self) -> str:
+        return RECOMMENDATION_FEEDBACK_LABELS.get(self.feedback, "")
 
 
 @dataclass(frozen=True)
@@ -255,9 +275,11 @@ class PassportEntry:
     category: str
     tried_on: date
     where_tried: str
+    contains_caffeine: bool = False
     rating: int | None = None
     would_try_again: bool = False
     notes: str = ""
+    created_at_utc: datetime | None = None
 
     @property
     def display_name(self) -> str:
@@ -280,6 +302,10 @@ class PassportEntry:
             return "Unrated"
         return f"{self.rating}/5"
 
+    @property
+    def caffeine_label(self) -> str:
+        return "Contains caffeine" if self.contains_caffeine else "No caffeine noted"
+
 
 @dataclass(frozen=True)
 class PassportSummary:
@@ -287,6 +313,38 @@ class PassportSummary:
     unique_sodas: int = 0
     countries_count: int = 0
     latest_country: str = ""
+
+
+@dataclass(frozen=True)
+class PassportBreakdownItem:
+    label: str
+    count: int
+
+
+@dataclass(frozen=True)
+class PassportInsights:
+    countries: tuple[PassportBreakdownItem, ...] = ()
+    brands: tuple[PassportBreakdownItem, ...] = ()
+    categories: tuple[PassportBreakdownItem, ...] = ()
+
+
+@dataclass(frozen=True)
+class PassportDuplicateGroup:
+    entries: tuple[PassportEntry, ...] = ()
+
+    @property
+    def display_name(self) -> str:
+        if not self.entries:
+            return "Duplicate entries"
+        return self.entries[0].display_name
+
+    @property
+    def count(self) -> int:
+        return len(self.entries)
+
+    @property
+    def ids_csv(self) -> str:
+        return ",".join(str(entry.id) for entry in self.entries)
 
 
 @dataclass(frozen=True)

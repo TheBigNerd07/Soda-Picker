@@ -63,8 +63,8 @@
                     <strong>{{ entry.display_name }}</strong>
                     <p>{{ entry.caffeine_mg|number }} mg · {{ entry.source_label }} · {{ entry.time_label }}</p>
                   </div>
-                  <span class="badge small {% if entry.entry_type == 'manual' %}accent{% endif %}">
-                    {{ entry.entry_type }}
+                  <span class="badge small {% if entry.entry_type != 'catalog' %}accent{% endif %}">
+                    {{ entry.entry_type_label }}
                   </span>
                 </summary>
                 <form action="/activity/{{ entry.id }}/update" method="post" class="stack-form">
@@ -98,6 +98,18 @@
                     <button type="submit" class="button secondary">Save entry</button>
                   </div>
                 </form>
+                {% if entry.entry_type == 'manual_soda' %}
+                  <div class="compact-actions">
+                    <form action="/activity/{{ entry.id }}/to-passport" method="post" class="inline-form">
+                      <button type="submit" class="button tertiary small-button">Add to passport</button>
+                    </form>
+                    {% if is_admin %}
+                      <form action="/activity/{{ entry.id }}/to-catalog" method="post" class="inline-form">
+                        <button type="submit" class="button tertiary small-button">Add to catalog</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                {% endif %}
                 <form action="/activity/{{ entry.id }}/delete" method="post" class="inline-form delete-form">
                   <button type="submit" class="button danger">Delete entry</button>
                 </form>
@@ -127,12 +139,27 @@
                   {% if entry.rejection_summary %}
                     <p>{{ entry.rejection_summary }}</p>
                   {% endif %}
+                  {% if entry.feedback_label %}
+                    <p>Feedback: {{ entry.feedback_label }}</p>
+                  {% endif %}
+                  <div class="compact-actions top-gap">
+                    {% for feedback_value, feedback_label in recommendation_feedback_options %}
+                      <form action="/recommendations/{{ entry.id }}/feedback" method="post" class="inline-form">
+                        <input type="hidden" name="feedback" value="{{ feedback_value }}">
+                        <input type="hidden" name="return_to" value="/activity">
+                        <button type="submit" class="button tertiary small-button">{{ feedback_label }}</button>
+                      </form>
+                    {% endfor %}
+                  </div>
                 </div>
                 <div class="history-meta">
                   <span>{{ entry.time_label }}</span>
                   <span class="badge {% if entry.was_logged %}accent{% else %}warning{% endif %} small">
                     {% if entry.was_logged %}Logged{% else %}Skipped{% endif %}
                   </span>
+                  {% if entry.feedback_label %}
+                    <span class="badge tone-peach small">{{ entry.feedback_label }}</span>
+                  {% endif %}
                 </div>
               </li>
             {% endfor %}
@@ -169,6 +196,48 @@
             <textarea name="notes" rows="4" placeholder="Optional note"></textarea>
           </label>
           <button type="submit" class="button">Log manual entry</button>
+        </form>
+      </section>
+
+      <section class="panel content-panel top-gap">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Manual soda</p>
+            <h2>Log a soda you already drank</h2>
+          </div>
+        </div>
+        <form action="/manual-soda-entry" method="post" class="stack-form">
+          <div class="form-grid">
+            <label>
+              <span>Soda name</span>
+              <input type="text" name="soda_name" placeholder="Something you were handed" required>
+            </label>
+            <label>
+              <span>Brand</span>
+              <input type="text" name="brand" placeholder="Optional">
+            </label>
+            <label>
+              <span>When</span>
+              <input type="datetime-local" name="consumed_at_local" value="{{ manual_entry_time }}">
+            </label>
+            <label>
+              <span>Caffeine (mg if known)</span>
+              <input type="number" min="0" step="1" name="caffeine_mg" placeholder="Optional">
+            </label>
+          </div>
+          <input type="hidden" name="contains_caffeine" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="contains_caffeine" value="true">
+            <span>Contains caffeine</span>
+          </label>
+          <label>
+            <span>Notes</span>
+            <textarea name="notes" rows="4" placeholder="Where it came from, who gave it to you, anything else"></textarea>
+          </label>
+          <p class="helper-text">
+            If you do not know the caffeine amount, Soda Picker can still log it. Caffeinated sodas without a number use the same conservative estimate as manually added catalog sodas.
+          </p>
+          <button type="submit" class="button secondary">Log manual soda</button>
         </form>
       </section>
 

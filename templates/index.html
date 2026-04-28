@@ -214,6 +214,20 @@
               <a class="button tertiary" href="{{ access_login_url }}">Log in to save this pick</a>
             {% endif %}
           </div>
+          {% if can_write and recommendation_id %}
+            <div class="mini-panel">
+              <p class="mini-panel-title">How was this pick?</p>
+              <div class="action-grid">
+                {% for feedback_value, feedback_label in recommendation_feedback_options %}
+                  <form action="/recommendations/{{ recommendation_id }}/feedback" method="post" class="inline-form">
+                    <input type="hidden" name="feedback" value="{{ feedback_value }}">
+                    <input type="hidden" name="return_to" value="/">
+                    <button type="submit" class="button tertiary small-button">{{ feedback_label }}</button>
+                  </form>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
         {% elif recommendation %}
           <div class="recommendation-layout recommendation-empty">
             <div class="art-stage">
@@ -327,6 +341,9 @@
                   <span class="badge {% if entry.was_logged %}accent{% else %}warning{% endif %} small">
                     {% if entry.was_logged %}Logged{% else %}Not logged{% endif %}
                   </span>
+                  {% if entry.feedback_label %}
+                    <span class="badge tone-peach small">{{ entry.feedback_label }}</span>
+                  {% endif %}
                 </div>
               </li>
             {% endfor %}
@@ -425,6 +442,47 @@
           </form>
         {% else %}
           <p class="empty-copy">Manual logging unlocks after you sign in.</p>
+        {% endif %}
+      </section>
+
+      <section class="panel content-panel side-card">
+        <div class="side-card-header">
+          <div>
+            <p class="eyebrow">Quick add</p>
+            <h3>Manual soda entry</h3>
+          </div>
+        </div>
+        {% if can_write %}
+          <form action="/manual-soda-entry" method="post" class="stack-form">
+            <label>
+              <span>Soda name</span>
+              <input type="text" name="soda_name" placeholder="Gifted soda, mystery can" required>
+            </label>
+            <label>
+              <span>Brand</span>
+              <input type="text" name="brand" placeholder="Optional">
+            </label>
+            <label>
+              <span>When</span>
+              <input type="datetime-local" name="consumed_at_local" value="{{ manual_entry_time }}">
+            </label>
+            <label>
+              <span>Caffeine (mg if known)</span>
+              <input type="number" min="0" step="1" name="caffeine_mg" placeholder="Optional">
+            </label>
+            <input type="hidden" name="contains_caffeine" value="false">
+            <label class="inline-check">
+              <input type="checkbox" name="contains_caffeine" value="true">
+              <span>Contains caffeine</span>
+            </label>
+            <label>
+              <span>Notes</span>
+              <textarea name="notes" rows="3" placeholder="Optional note"></textarea>
+            </label>
+            <button type="submit" class="button tertiary">Log manual soda</button>
+          </form>
+        {% else %}
+          <p class="empty-copy">Manual soda logging unlocks after you sign in.</p>
         {% endif %}
       </section>
 
