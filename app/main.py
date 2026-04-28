@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import shutil
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urlparse
@@ -88,6 +88,25 @@ def _asset_version(path: str) -> str:
         return "0"
 
 
+def _app_build_stamp() -> str:
+    tracked_paths = (
+        Path("app/main.py"),
+        Path("templates/base.html"),
+        Path("static/style.css"),
+        Path("static/app.js"),
+        Path("static/manifest.webmanifest"),
+    )
+    latest_mtime = 0.0
+    for path in tracked_paths:
+        try:
+            latest_mtime = max(latest_mtime, path.stat().st_mtime)
+        except OSError:
+            continue
+    if latest_mtime <= 0:
+        return "unknown"
+    return datetime.fromtimestamp(latest_mtime, tz=timezone.utc).strftime("%Y%m%d%H%M")
+
+
 templates.env.globals["asset_version"] = _asset_version
 
 
@@ -102,6 +121,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Soda Picker", version="2.0.0", lifespan=lifespan)
+templates.env.globals["app_version_label"] = f"v{app.version} ({_app_build_stamp()})"
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if base_settings.trusted_hosts_list:
