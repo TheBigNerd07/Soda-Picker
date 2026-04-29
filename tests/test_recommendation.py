@@ -322,6 +322,28 @@ class RecommendationEngineTests(unittest.TestCase):
         self.assertEqual(result.status, "blocked")
         self.assertIn("Both diet and full-sugar sodas are turned off", result.reason)
 
+    def test_caffeine_restrictions_can_be_disabled_per_account(self) -> None:
+        local_now = datetime(2026, 3, 13, 22, 0, tzinfo=self.settings.timezone)
+        settings = self.settings.with_overrides({"caffeine_restrictions_enabled": "false"})
+        result = self.engine.recommend(
+            rules=settings.effective_rules(local_now),
+            catalog_items=[
+                self.build_item(Soda(id="cola", name="Cola", caffeine_mg=38, priority=4)),
+                self.build_item(Soda(id="sprite", name="Sprite", caffeine_mg=0, is_caffeine_free=True, priority=1)),
+            ],
+            daily_caffeine_total=160,
+            recent_soda_ids=[],
+            today_entries=[],
+            local_now=local_now,
+            chaos_mode=False,
+            rng=Random(13),
+        )
+
+        self.assertIsNotNone(result.soda)
+        self.assertEqual(result.soda.soda.name, "Cola")
+        self.assertIsNone(result.remaining_budget_mg)
+        self.assertIn("guardrails are turned off", result.rules_summary)
+
 
 if __name__ == "__main__":
     unittest.main()

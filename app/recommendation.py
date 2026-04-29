@@ -118,7 +118,11 @@ class RecommendationEngine:
 
         choice = self._weighted_choice(candidates, rng)
         projected_total = daily_caffeine_total + choice.item.soda.caffeine_mg
-        remaining_budget = rules.daily_caffeine_limit_mg - projected_total
+        remaining_budget = (
+            rules.daily_caffeine_limit_mg - projected_total
+            if rules.caffeine_restrictions_enabled
+            else None
+        )
         rejected = self._build_rejections(evaluations, exclude_id=choice.item.id)
 
         return RecommendationResult(
@@ -215,40 +219,42 @@ class RecommendationEngine:
         caffeine_mg = item.soda.caffeine_mg
         if caffeine_mg > 0:
             projected_total = daily_caffeine_total + caffeine_mg
-            if daily_caffeine_total >= rules.daily_caffeine_limit_mg:
-                evaluation.weight = 0
-                evaluation.blocked = True
-                evaluation.reasons.append("today's caffeine limit is already used up")
-                return evaluation
+            if rules.caffeine_restrictions_enabled:
+                if daily_caffeine_total >= rules.daily_caffeine_limit_mg:
+                    evaluation.weight = 0
+                    evaluation.blocked = True
+                    evaluation.reasons.append("today's caffeine limit is already used up")
+                    return evaluation
 
-            if projected_total > rules.daily_caffeine_limit_mg:
-                evaluation.weight *= 0.08 if not chaos_mode else 0.15
-                evaluation.reasons.append("would push the day over your caffeine cap")
-            elif projected_total > rules.daily_caffeine_limit_mg * 0.85:
-                evaluation.weight *= 0.45
-                evaluation.reasons.append("would take you close to the daily limit")
-            elif projected_total > rules.daily_caffeine_limit_mg * 0.7:
-                evaluation.weight *= 0.75
-                evaluation.reasons.append("uses a big chunk of today's caffeine budget")
+                if projected_total > rules.daily_caffeine_limit_mg:
+                    evaluation.weight *= 0.08 if not chaos_mode else 0.15
+                    evaluation.reasons.append("would push the day over your caffeine cap")
+                elif projected_total > rules.daily_caffeine_limit_mg * 0.85:
+                    evaluation.weight *= 0.45
+                    evaluation.reasons.append("would take you close to the daily limit")
+                elif projected_total > rules.daily_caffeine_limit_mg * 0.7:
+                    evaluation.weight *= 0.75
+                    evaluation.reasons.append("uses a big chunk of today's caffeine budget")
 
-            if stage == "late":
-                if caffeine_mg <= 20:
-                    evaluation.weight *= 0.85
-                    evaluation.reasons.append("late-day caffeine keeps getting nudged down")
-                elif caffeine_mg <= 40:
-                    evaluation.weight *= 0.35
-                    evaluation.reasons.append("later-day rules prefer lighter caffeine")
-                else:
-                    evaluation.weight *= 0.08 if not chaos_mode else 0.16
-                    evaluation.reasons.append("high caffeine is heavily penalized this late")
-            elif stage == "night":
-                evaluation.weight *= 0.02
-                evaluation.reasons.append("night mode strongly prefers caffeine-free soda")
+                if stage == "late":
+                    if caffeine_mg <= 20:
+                        evaluation.weight *= 0.85
+                        evaluation.reasons.append("late-day caffeine keeps getting nudged down")
+                    elif caffeine_mg <= 40:
+                        evaluation.weight *= 0.35
+                        evaluation.reasons.append("later-day rules prefer lighter caffeine")
+                    else:
+                        evaluation.weight *= 0.08 if not chaos_mode else 0.16
+                        evaluation.reasons.append("high caffeine is heavily penalized this late")
+                elif stage == "night":
+                    evaluation.weight *= 0.02
+                    evaluation.reasons.append("night mode strongly prefers caffeine-free soda")
         else:
-            if stage == "late":
-                evaluation.weight *= 1.75
-            elif stage == "night":
-                evaluation.weight *= 2.4
+            if rules.caffeine_restrictions_enabled:
+                if stage == "late":
+                    evaluation.weight *= 1.75
+                elif stage == "night":
+                    evaluation.weight *= 2.4
 
         training_adjustment = build_training_adjustment(item, training_profile)
         if training_adjustment.multiplier != 1.0:
@@ -329,19 +335,27 @@ class RecommendationEngine:
             base_reason = "Random fun pick within your current safety and timing limits."
         elif item.state.preference == PREFERENCE_FAVORITE:
             base_reason = "Favorite available, in stock, and still inside the current rules."
-        elif item.soda.caffeine_mg <= 0 and stage in {"late", "night"}:
+        elif rules.caffeine_restrictions_enabled and item.soda.caffeine_mg <= 0 and stage in {"late", "night"}:
             base_reason = "Lower-risk pick for later in the day."
-        elif daily_caffeine_total > 0 and item.soda.caffeine_mg <= 20:
+        elif rules.caffeine_restrictions_enabled and daily_caffeine_total > 0 and item.soda.caffeine_mg <= 20:
             base_reason = f"You already had {daily_caffeine_total:g} mg today, so this keeps things gentler."
-        elif stage == "late":
+        elif rules.caffeine_restrictions_enabled and stage == "late":
             base_reason = (
                 f"The caffeine window starts tightening around {rules.effective_cutoff_display}, "
                 "so this came out as a safer late-day option."
             )
+        elif not rules.caffeine_restrictions_enabled and item.soda.caffeine_mg > 0:
+            base_reason = "Caffeine guardrails are off for this account, so this stayed in play."
         elif item.soda.priority > 1:
-            base_reason = "Higher-priority pick that still fits your current caffeine budget."
+            if rules.caffeine_restrictions_enabled:
+                base_reason = "Higher-priority pick that still fits your current caffeine budget."
+            else:
+                base_reason = "Higher-priority pick that still fits your current setup."
         else:
-            base_reason = "Balanced random pick within your current limits."
+            if rules.caffeine_restrictions_enabled:
+                base_reason = "Balanced random pick within your current limits."
+            else:
+                base_reason = "Balanced random pick within your current setup."
 
         if choice.nudges:
             base_reason = f"{base_reason} {choice.nudges[0].capitalize()}."
@@ -382,17 +396,22 @@ class RecommendationEngine:
             return "Everything in the catalog is currently marked out of stock."
         if all(evaluation.item.state.is_temporarily_banned(local_now) for evaluation in evaluations):
             return "Everything is temporarily banned right now."
-        if daily_caffeine_total >= rules.daily_caffeine_limit_mg:
+        if rules.caffeine_restrictions_enabled and daily_caffeine_total >= rules.daily_caffeine_limit_mg:
             return (
                 f"You already hit {daily_caffeine_total:g} mg today, "
                 "and there is no caffeine-free option currently available."
             )
-        if stage == "night":
+        if rules.caffeine_restrictions_enabled and stage == "night":
             return "It is night mode now, and nothing available is gentle enough."
         return "The current inventory, bans, and caffeine rules knocked everything out."
 
     @staticmethod
     def _build_rules_summary(rules: RuntimeRules) -> str:
+        if not rules.caffeine_restrictions_enabled:
+            return (
+                f"{rules.rules_label}: soda starts at {rules.no_soda_before_display}, "
+                "but caffeine guardrails are turned off for this account."
+            )
         return (
             f"{rules.rules_label}: soda starts at {rules.no_soda_before_display}, "
             f"caffeine gets squeezed after {rules.effective_cutoff_display}, bedtime is {rules.bedtime_display}."

@@ -1,5 +1,7 @@
 # Soda Picker
 
+Release target: `v1.0.0`
+
 Soda Picker is a local-first FastAPI app that reads a soda catalog from CSV, recommends a soda using inventory, preference, time-of-day, weekend, and caffeine-budget rules, and stores local state in SQLite. It is intentionally lightweight so it runs well on a MacBook in Docker and later on a Raspberry Pi behind Cloudflare Tunnel or another reverse proxy.
 
 ## Architecture
@@ -21,16 +23,23 @@ Why this fits Raspberry Pi + Docker:
 The app now includes:
 
 - CSV import from the UI with validation feedback and automatic CSV backups.
+- Direct shared-catalog soda creation from the UI.
 - Inventory flags so only in-stock sodas get recommended.
 - Favorites, dislikes, and temporary bans per soda.
 - Stronger duplicate avoidance using recent recommendation and consumption history.
 - Weekday and weekend timing rules.
 - A bedtime-aware caffeine squeeze window.
 - Manual caffeine entries for coffee, tea, or anything else.
+- Manual soda entries for drinks you already had, plus one-click actions into Passport or the shared catalog.
 - Editable and deletable history entries.
 - Recommendation history with “logged or skipped” tracking.
+- Recommendation feedback buttons like `good pick`, `bad pick`, `too sweet`, `too much caffeine`, and `not in the mood`.
 - A Soda Passport page for world sodas you have already tried, with origin notes, ratings, and export.
+- Passport duplicate merge, ownership conversion into inventory, and country/brand/category stats.
 - A Wishlist page for sodas you want to find again, plus quick-add actions from Catalog and Passport.
+- Venue / fountain location menus with Coke and Pepsi presets so recommendations can be scoped to what a restaurant actually pours.
+- Per-user mood/type preferences, pinned categories, sugar/diet filters, and optional caffeine restriction bypasses.
+- Home-screen install support for iPhone and other PWA-capable devices.
 - Export endpoints for consumption history, recommendation history, and the current catalog.
 - Database backup creation and backup file listing.
 - Runtime rule overrides saved in SQLite from the settings UI.
@@ -91,7 +100,7 @@ python3 -m unittest discover -s tests
 - SQLite lives at `DATABASE_PATH`.
 - Backups are written to `BACKUP_DIR`.
 - The container restarts with `unless-stopped`.
-- Health checks hit `GET /healthz`.
+- Health checks hit `GET /healthz` and return `503` if the catalog CSV is missing or no usable sodas are loaded.
 - Uvicorn is started with proxy header support enabled for future reverse-proxy use.
 
 ## Raspberry Pi deployment
@@ -165,12 +174,12 @@ Behavior:
 
 ## Runtime pages
 
-- `/` dashboard: recommendation flow, quick manual entries, quick passport entry, reminder controls, and a summary of today’s log, recent recommendations, passport entries, and wishlist items.
-- `/catalog`: CSV import, catalog diagnostics, stock controls, favorites, dislikes, and temporary bans.
+- `/` dashboard: recommendation flow, availability-source and mood/type selection, quick manual entries, quick passport entry, reminder controls, and a summary of today’s log, recent recommendations, passport entries, and wishlist items.
+- `/catalog`: CSV import, shared soda add, paginated catalog controls, and venue/fountain menu management.
 - `/activity`: full editable caffeine log plus recommendation history exports.
-- `/passport`: a long-term soda memory page for sodas you have tried from anywhere, with country/city notes, ratings, and CSV export.
+- `/passport`: a long-term soda memory page for sodas you have tried from anywhere, with country/city notes, ratings, duplicate merge, owned-now conversion, insights, and CSV export.
 - `/wishlist`: a separate list of sodas you want to track down, restock, or revisit later.
-- `/settings`: per-user runtime rule overrides, environment-backed value display, exports, backup controls, and admin user management.
+- `/settings`: per-user runtime rule overrides, training/preferences, exports, backup controls, and admin user management.
 - `/healthz`: container health endpoint.
 
 ## Security and proxy notes
@@ -213,6 +222,9 @@ Replace `./data/sample_sodas.csv` with your real catalog and review these enviro
 - `WEEKEND_BEDTIME_HOUR`
 - `LATEST_CAFFEINE_HOURS_BEFORE_BED`
 - `DUPLICATE_LOOKBACK`
+- `CAFFEINE_RESTRICTIONS_ENABLED`
+- `ALLOW_DIET_SODAS`
+- `ALLOW_FULL_SUGAR_SODAS`
 - `CSV_PATH`
 - `DATABASE_PATH`
 - `BACKUP_DIR`
@@ -231,3 +243,12 @@ Replace `./data/sample_sodas.csv` with your real catalog and review these enviro
 - `RATE_LIMIT_WINDOW_SECONDS`
 
 Assumption: PiOne runs a 64-bit `arm64` Raspberry Pi OS or equivalent Docker host.
+
+## iPhone install
+
+1. Open Soda Picker in Safari.
+2. Tap `Share`.
+3. Tap `Add to Home Screen`.
+4. Reopen it from the Home Screen for the standalone app experience.
+
+If the installed app looks stale after an update, rebuild the container and reopen the home-screen app. The app now version-tags its manifest and service worker to make updates more reliable.

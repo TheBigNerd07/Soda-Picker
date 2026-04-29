@@ -13,6 +13,7 @@ from .models import (
     PREFERENCE_CHOICES,
     PREFERENCE_NEUTRAL,
     ConsumptionEntry,
+    FountainLocation,
     PassportBreakdownItem,
     PassportDuplicateGroup,
     PassportEntry,
@@ -44,6 +45,8 @@ USER_RECOMMENDATION_TABLE = "user_recommendation_history"
 USER_PASSPORT_TABLE = "user_soda_passport"
 USER_WISHLIST_TABLE = "user_soda_wishlist"
 USER_TASTE_TRAINING_TABLE = "user_taste_training"
+USER_FOUNTAIN_LOCATION_TABLE = "user_fountain_location"
+USER_FOUNTAIN_LOCATION_SODA_TABLE = "user_fountain_location_soda"
 USER_OWNED_TABLES = (
     USER_CONSUMPTION_TABLE,
     USER_SODA_STATE_TABLE,
@@ -52,6 +55,7 @@ USER_OWNED_TABLES = (
     USER_PASSPORT_TABLE,
     USER_WISHLIST_TABLE,
     USER_TASTE_TRAINING_TABLE,
+    USER_FOUNTAIN_LOCATION_TABLE,
 )
 
 
@@ -620,6 +624,147 @@ class Database:
                 f"DELETE FROM {USER_TASTE_TRAINING_TABLE} WHERE user_id = ?",
                 (user_id,),
             )
+
+    def list_fountain_locations(self, user_id: int) -> list[FountainLocation]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, user_id, name, preset_key, updated_at_utc
+                FROM {USER_FOUNTAIN_LOCATION_TABLE}
+                WHERE user_id = ?
+                ORDER BY name COLLATE NOCASE ASC, updated_at_utc DESC
+                """,
+                (user_id,),
+            ).fetchall()
+            location_ids = [int(row["id"]) for row in rows]
+            soda_map = self._load_location_soda_map(connection, location_ids)
+
+        locations: list[FountainLocation] = []
+        for row in rows:
+            location_id = int(row["id"])
+            locations.append(
+                FountainLocation(
+                    id=location_id,
+                    user_id=int(row["user_id"]),
+                    name=row["name"],
+                    preset_key=row["preset_key"] or "",
+                    soda_ids=soda_map.get(location_id, ()),
+                    updated_at_utc=datetime.fromisoformat(row["updated_at_utc"]) if row["updated_at_utc"] else None,
+                )
+            )
+        return locations
+
+    def get_fountain_location(self, user_id: int, location_id: int) -> FountainLocation | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                f"""
+                SELECT id, user_id, name, preset_key, updated_at_utc
+                FROM {USER_FOUNTAIN_LOCATION_TABLE}
+                WHERE user_id = ? AND id = ?
+                """,
+                (user_id, location_id),
+            ).fetchone()
+            if row is None:
+                return None
+            soda_map = self._load_location_soda_map(connection, [location_id])
+
+        return FountainLocation(
+            id=int(row["id"]),
+            user_id=int(row["user_id"]),
+            name=row["name"],
+            preset_key=row["preset_key"] or "",
+            soda_ids=soda_map.get(location_id, ()),
+            updated_at_utc=datetime.fromisoformat(row["updated_at_utc"]) if row["updated_at_utc"] else None,
+        )
+
+    def create_fountain_location(
+        self,
+        user_id: int,
+        *,
+        name: str,
+        preset_key: str,
+        soda_ids: tuple[str, ...],
+    ) -> FountainLocation:
+        normalized_name = self._normalize_location_name(name)
+        normalized_soda_ids = self._normalize_soda_ids(soda_ids)
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as connection:
+            self._ensure_unique_location_name(connection, user_id=user_id, name=normalized_name)
+            cursor = connection.execute(
+                f"""
+                INSERT INTO {USER_FOUNTAIN_LOCATION_TABLE} (user_id, name, preset_key, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user_id, normalized_name, preset_key.strip().lower(), now, now),
+            )
+            location_id = int(cursor.lastrowid)
+            for soda_id in normalized_soda_ids:
+                connection.execute(
+                    f"""
+                    INSERT INTO {USER_FOUNTAIN_LOCATION_SODA_TABLE} (location_id, soda_id)
+                    VALUES (?, ?)
+                    """,
+                    (location_id, soda_id),
+                )
+        created = self.get_fountain_location(user_id, location_id)
+        if created is None:
+            raise RuntimeError("Failed to create the fountain location.")
+        return created
+
+    def update_fountain_location(
+        self,
+        user_id: int,
+        location_id: int,
+        *,
+        name: str,
+        preset_key: str,
+        soda_ids: tuple[str, ...],
+    ) -> FountainLocation | None:
+        normalized_name = self._normalize_location_name(name)
+        normalized_soda_ids = self._normalize_soda_ids(soda_ids)
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as connection:
+            existing = connection.execute(
+                f"SELECT id FROM {USER_FOUNTAIN_LOCATION_TABLE} WHERE user_id = ? AND id = ?",
+                (user_id, location_id),
+            ).fetchone()
+            if existing is None:
+                return None
+            self._ensure_unique_location_name(
+                connection,
+                user_id=user_id,
+                name=normalized_name,
+                exclude_location_id=location_id,
+            )
+            connection.execute(
+                f"""
+                UPDATE {USER_FOUNTAIN_LOCATION_TABLE}
+                SET name = ?, preset_key = ?, updated_at_utc = ?
+                WHERE user_id = ? AND id = ?
+                """,
+                (normalized_name, preset_key.strip().lower(), now, user_id, location_id),
+            )
+            connection.execute(
+                f"DELETE FROM {USER_FOUNTAIN_LOCATION_SODA_TABLE} WHERE location_id = ?",
+                (location_id,),
+            )
+            for soda_id in normalized_soda_ids:
+                connection.execute(
+                    f"""
+                    INSERT INTO {USER_FOUNTAIN_LOCATION_SODA_TABLE} (location_id, soda_id)
+                    VALUES (?, ?)
+                    """,
+                    (location_id, soda_id),
+                )
+        return self.get_fountain_location(user_id, location_id)
+
+    def delete_fountain_location(self, user_id: int, location_id: int) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                f"DELETE FROM {USER_FOUNTAIN_LOCATION_TABLE} WHERE user_id = ? AND id = ?",
+                (user_id, location_id),
+            )
+        return cursor.rowcount > 0
 
     def log_recommendation(self, user_id: int, recommendation: RecommendationResult, local_now: datetime) -> int:
         utc_now = local_now.astimezone(timezone.utc)
@@ -1736,6 +1881,37 @@ class Database:
             """
         )
 
+        connection.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {USER_FOUNTAIN_LOCATION_TABLE} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                preset_key TEXT NOT NULL DEFAULT '',
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES user_account(id) ON DELETE CASCADE
+            )
+            """
+        )
+        connection.execute(
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_user_fountain_location_user_name
+            ON {USER_FOUNTAIN_LOCATION_TABLE} (user_id, name COLLATE NOCASE)
+            """
+        )
+
+        connection.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {USER_FOUNTAIN_LOCATION_SODA_TABLE} (
+                location_id INTEGER NOT NULL,
+                soda_id TEXT NOT NULL,
+                PRIMARY KEY (location_id, soda_id),
+                FOREIGN KEY (location_id) REFERENCES {USER_FOUNTAIN_LOCATION_TABLE}(id) ON DELETE CASCADE
+            )
+            """
+        )
+
     def _migrate_legacy_tables(self, connection: sqlite3.Connection, *, owner_user_id: int) -> None:
         self._migrate_consumption_log(connection, owner_user_id=owner_user_id)
         self._migrate_soda_state(connection, owner_user_id=owner_user_id)
@@ -2207,6 +2383,72 @@ class Database:
         if column_name in self._table_columns(connection, table_name):
             return
         connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+    def _load_location_soda_map(self, connection: sqlite3.Connection, location_ids: list[int]) -> dict[int, tuple[str, ...]]:
+        if not location_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in location_ids)
+        rows = connection.execute(
+            f"""
+            SELECT location_id, soda_id
+            FROM {USER_FOUNTAIN_LOCATION_SODA_TABLE}
+            WHERE location_id IN ({placeholders})
+            ORDER BY soda_id COLLATE NOCASE ASC
+            """,
+            tuple(location_ids),
+        ).fetchall()
+        grouped: dict[int, list[str]] = {location_id: [] for location_id in location_ids}
+        for row in rows:
+            grouped.setdefault(int(row["location_id"]), []).append(row["soda_id"])
+        return {location_id: tuple(soda_ids) for location_id, soda_ids in grouped.items()}
+
+    def _ensure_unique_location_name(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        user_id: int,
+        name: str,
+        exclude_location_id: int | None = None,
+    ) -> None:
+        if exclude_location_id is None:
+            row = connection.execute(
+                f"""
+                SELECT id
+                FROM {USER_FOUNTAIN_LOCATION_TABLE}
+                WHERE user_id = ? AND name = ? COLLATE NOCASE
+                """,
+                (user_id, name),
+            ).fetchone()
+        else:
+            row = connection.execute(
+                f"""
+                SELECT id
+                FROM {USER_FOUNTAIN_LOCATION_TABLE}
+                WHERE user_id = ? AND name = ? COLLATE NOCASE AND id != ?
+                """,
+                (user_id, name, exclude_location_id),
+            ).fetchone()
+        if row is not None:
+            raise ValueError("That location name already exists.")
+
+    @staticmethod
+    def _normalize_location_name(name: str) -> str:
+        cleaned = name.strip()
+        if not cleaned:
+            raise ValueError("Location name is required.")
+        return cleaned
+
+    @staticmethod
+    def _normalize_soda_ids(soda_ids: tuple[str, ...]) -> tuple[str, ...]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for raw_value in soda_ids:
+            cleaned = raw_value.strip()
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            ordered.append(cleaned)
+        return tuple(ordered)
 
     @staticmethod
     def _normalize_passport_key(soda_name: str, brand: str) -> str:

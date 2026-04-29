@@ -150,15 +150,7 @@ def featured_pick_styles(
     )
 
 
-def build_pick_style_groups(catalog_items: list[CatalogItem]) -> tuple[PickStyleGroup, ...]:
-    groups: list[PickStyleGroup] = [
-        PickStyleGroup(label="Picker", options=(ANY_PICK_STYLE,)),
-    ]
-
-    featured = featured_pick_styles(catalog_items)
-    if featured:
-        groups.append(PickStyleGroup(label="Featured moods", options=featured))
-
+def category_pick_styles(catalog_items: list[CatalogItem]) -> tuple[PickStyleOption, ...]:
     categories: dict[str, PickStyleOption] = {}
     for item in catalog_items:
         category = item.soda.category.strip()
@@ -175,22 +167,60 @@ def build_pick_style_groups(catalog_items: list[CatalogItem]) -> tuple[PickStyle
             match_key=key,
         )
 
-    if categories:
+    return tuple(sorted(categories.values(), key=lambda option: option.label.lower()))
+
+
+def build_pick_style_groups(
+    catalog_items: list[CatalogItem],
+    *,
+    pinned_category_keys: tuple[str, ...] = (),
+) -> tuple[PickStyleGroup, ...]:
+    groups: list[PickStyleGroup] = [
+        PickStyleGroup(label="Picker", options=(ANY_PICK_STYLE,)),
+    ]
+
+    category_options = category_pick_styles(catalog_items)
+    category_map = {option.match_key: option for option in category_options}
+    pinned_options: list[PickStyleOption] = []
+    seen_pinned: set[str] = set()
+    for key in pinned_category_keys:
+        option = category_map.get(key)
+        if option is None or option.match_key in seen_pinned:
+            continue
+        seen_pinned.add(option.match_key)
+        pinned_options.append(option)
+
+    if pinned_options:
+        groups.append(PickStyleGroup(label="Pinned categories", options=tuple(pinned_options)))
+
+    featured = featured_pick_styles(catalog_items)
+    if featured:
+        groups.append(PickStyleGroup(label="Featured moods", options=featured))
+
+    remaining_categories = tuple(
+        option for option in category_options if option.match_key not in seen_pinned
+    )
+    if remaining_categories:
         groups.append(
             PickStyleGroup(
                 label="Catalog categories",
-                options=tuple(sorted(categories.values(), key=lambda option: option.label.lower())),
+                options=remaining_categories,
             )
         )
 
     return tuple(groups)
 
 
-def resolve_pick_style_option(value: str | None, catalog_items: list[CatalogItem]) -> PickStyleOption:
+def resolve_pick_style_option(
+    value: str | None,
+    catalog_items: list[CatalogItem],
+    *,
+    pinned_category_keys: tuple[str, ...] = (),
+) -> PickStyleOption:
     if not value:
         return ANY_PICK_STYLE
 
-    for group in build_pick_style_groups(catalog_items):
+    for group in build_pick_style_groups(catalog_items, pinned_category_keys=pinned_category_keys):
         for option in group.options:
             if option.value == value:
                 return option

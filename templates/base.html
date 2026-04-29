@@ -11,7 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="format-detection" content="telephone=no">
     <title>{% block title %}Soda Picker{% endblock %}</title>
-    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="manifest" href="/manifest.webmanifest?v={{ app_build_stamp }}">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/icons/app-icon.svg') }}">
     <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', path='/icons/apple-touch-icon.png') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}?v={{ asset_version('/style.css') }}">
     <script defer src="{{ url_for('static', path='/app.js') }}?v={{ asset_version('/app.js') }}"></script>
   </head>
-  <body class="{% block body_class %}{% endblock %}{% if write_locked %} write-locked{% endif %}">
+  <body class="{% block body_class %}{% endblock %}{% if write_locked %} write-locked{% endif %}" data-build="{{ app_build_stamp }}">
     <div class="page-glow page-glow-left"></div>
     <div class="page-glow page-glow-right"></div>
     <main class="shell">

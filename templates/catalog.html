@@ -13,6 +13,7 @@
       </div>
       <div class="page-header-actions">
         <a class="button tertiary" href="/exports/catalog.csv">Download current CSV</a>
+        <a class="button tertiary" href="#catalog-locations">Fountain locations</a>
         {% if is_admin %}
           <a class="button tertiary" href="#catalog-add">Add soda</a>
           <a class="button secondary" href="#catalog-import">Replace catalog</a>
@@ -41,15 +42,16 @@
 
   <section class="dashboard-grid">
     <div class="column-main">
-      <section class="panel content-panel">
+      <section class="panel content-panel" id="catalog-list">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Loaded sodas</p>
-            <h2>{{ catalog_items|length }} entries in play</h2>
+            <h2>{{ catalog_total_count }} entries in play</h2>
           </div>
           <a class="button tertiary" href="/exports/catalog.csv">Download current CSV</a>
         </div>
         <p class="section-note">Row controls save your personal availability and preference flags without changing the shared catalog.</p>
+        <p class="helper-text">Page {{ catalog_current_page }} of {{ catalog_total_pages }}.</p>
         <div class="table-scroll">
           <table class="catalog-table">
             <thead>
@@ -62,7 +64,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for item in catalog_items %}
+              {% for item in catalog_page_items %}
                 <tr>
                   <td data-label="Soda">
                     <strong>{{ item.soda.display_name }}</strong>
@@ -95,6 +97,7 @@
                     <div class="table-control-stack">
                       <form action="/catalog/state" method="post" class="stack-form compact catalog-state-form">
                         <input type="hidden" name="soda_id" value="{{ item.id }}">
+                        <input type="hidden" name="return_to" value="{{ catalog_page_url }}">
                         <div class="catalog-state-grid">
                           <label class="inline-check catalog-stock-toggle">
                             <input type="checkbox" name="is_available" value="true" {% if item.state.is_available %}checked{% endif %}>
@@ -117,6 +120,7 @@
                       </form>
                       <form action="/wishlist/from-catalog" method="post" class="catalog-inline-form">
                         <input type="hidden" name="soda_id" value="{{ item.id }}">
+                        <input type="hidden" name="return_to" value="{{ catalog_page_url }}">
                         <button type="submit" class="button tertiary small-button">Add to wishlist</button>
                       </form>
                     </div>
@@ -126,6 +130,170 @@
             </tbody>
           </table>
         </div>
+        {% if catalog_total_pages > 1 %}
+          <nav class="catalog-pagination" aria-label="Catalog pages">
+            <div class="catalog-pagination-links">
+              {% if catalog_has_prev_page %}
+                <a class="button tertiary small-button" href="/catalog?page={{ catalog_prev_page }}#catalog-list">Previous</a>
+              {% endif %}
+              {% for page_number in catalog_page_numbers %}
+                <a class="button {% if page_number == catalog_current_page %}secondary{% else %}tertiary{% endif %} small-button" href="/catalog?page={{ page_number }}#catalog-list">
+                  {{ page_number }}
+                </a>
+              {% endfor %}
+              {% if catalog_has_next_page %}
+                <a class="button tertiary small-button" href="/catalog?page={{ catalog_next_page }}#catalog-list">Next</a>
+              {% endif %}
+            </div>
+          </nav>
+        {% endif %}
+      </section>
+
+      <section class="panel content-panel top-gap" id="catalog-locations">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Fountain locations</p>
+            <h2>Save restaurant and venue menus</h2>
+          </div>
+        </div>
+        <p class="section-note">
+          Save what a location actually pours so the dashboard can recommend sodas you can get right there. Start from the Coke or Pepsi preset, then fine-tune the list if the menu differs.
+        </p>
+
+        <article class="panel content-panel panel-inset">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">New location</p>
+              <h3>Add a menu</h3>
+            </div>
+          </div>
+          <form action="/locations/create" method="post" class="stack-form">
+            <div class="form-grid">
+              <label>
+                <span>Location name</span>
+                <input type="text" name="name" placeholder="Chipotle fountain" required>
+              </label>
+              <label>
+                <span>Preset</span>
+                <select name="preset_key">
+                  <option value="">Custom menu</option>
+                  {% for preset in fountain_preset_options %}
+                    <option value="{{ preset.key }}">{{ preset.label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <p class="helper-text">
+              Leave the checklist untouched to use the preset defaults. Check specific sodas below if you want to customize the menu.
+            </p>
+            <div class="location-folder-list">
+              {% for group in catalog_company_groups %}
+                <details class="location-folder" {% if loop.index <= 3 %}open{% endif %}>
+                  <summary>
+                    <div>
+                      <strong>{{ group.label }}</strong>
+                      <p>{{ group.count }} soda{{ "" if group.count == 1 else "s" }}</p>
+                    </div>
+                  </summary>
+                  <div class="location-checklist">
+                    {% for item in group.items %}
+                      <label class="location-option">
+                        <input type="checkbox" name="soda_ids" value="{{ item.id }}">
+                        <span>
+                          <strong>{{ item.soda.display_name }}</strong>
+                          <small>{{ item.soda.caffeine_label }} · {{ item.soda.category }}</small>
+                        </span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </details>
+              {% endfor %}
+            </div>
+            <div class="button-row">
+              <button type="submit" class="button secondary">Save location menu</button>
+            </div>
+          </form>
+        </article>
+
+        {% if fountain_locations %}
+          <div class="location-card-grid top-gap">
+            {% for location in fountain_locations %}
+              <article class="panel content-panel panel-inset">
+                <div class="section-heading">
+                  <div>
+                    <p class="eyebrow">{{ location.preset_label }}</p>
+                    <h3>{{ location.name }}</h3>
+                  </div>
+                  <span class="badge">{{ location.soda_count }} soda{{ "" if location.soda_count == 1 else "s" }}</span>
+                </div>
+                {% if location.soda_labels %}
+                  <div class="badge-row compact">
+                    {% for label in location.soda_labels[:6] %}
+                      <span class="badge small">{{ label }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                <p class="helper-text top-gap">Updated {{ location.updated_label }}</p>
+                <details class="entry-editor top-gap">
+                  <summary>
+                    <div>
+                      <strong>Edit menu</strong>
+                      <p>Rename it or change which sodas are available there.</p>
+                    </div>
+                  </summary>
+                  <form action="/locations/{{ location.id }}/update" method="post" class="stack-form">
+                    <div class="form-grid">
+                      <label>
+                        <span>Location name</span>
+                        <input type="text" name="name" value="{{ location.name }}" required>
+                      </label>
+                      <label>
+                        <span>Preset label</span>
+                        <select name="preset_key">
+                          <option value="" {% if not location.preset_key %}selected{% endif %}>Custom menu</option>
+                          {% for preset in fountain_preset_options %}
+                            <option value="{{ preset.key }}" {% if preset.key == location.preset_key %}selected{% endif %}>{{ preset.label }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                    </div>
+                    <div class="location-folder-list">
+                      {% for group in catalog_company_groups %}
+                        <details class="location-folder" {% if loop.index <= 3 %}open{% endif %}>
+                          <summary>
+                            <div>
+                              <strong>{{ group.label }}</strong>
+                              <p>{{ group.count }} soda{{ "" if group.count == 1 else "s" }}</p>
+                            </div>
+                          </summary>
+                          <div class="location-checklist">
+                            {% for item in group.items %}
+                              <label class="location-option">
+                                <input type="checkbox" name="soda_ids" value="{{ item.id }}" {% if item.id in location.soda_ids %}checked{% endif %}>
+                                <span>
+                                  <strong>{{ item.soda.display_name }}</strong>
+                                  <small>{{ item.soda.caffeine_label }} · {{ item.soda.category }}</small>
+                                </span>
+                              </label>
+                            {% endfor %}
+                          </div>
+                        </details>
+                      {% endfor %}
+                    </div>
+                    <div class="button-row">
+                      <button type="submit" class="button secondary">Save menu</button>
+                    </div>
+                  </form>
+                  <form action="/locations/{{ location.id }}/delete" method="post" class="inline-form top-gap delete-form">
+                    <button type="submit" class="button tertiary">Delete location</button>
+                  </form>
+                </details>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="empty-copy top-gap">No saved fountain locations yet.</p>
+        {% endif %}
       </section>
     </div>
 

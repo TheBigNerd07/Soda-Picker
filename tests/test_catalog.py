@@ -9,6 +9,16 @@ from app.catalog import SodaCatalog
 
 
 class SodaCatalogTests(unittest.TestCase):
+    def test_missing_csv_is_reported_cleanly(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir) / "missing.csv"
+            catalog = SodaCatalog(str(csv_path))
+
+            sodas = catalog.list_sodas()
+
+            self.assertEqual(sodas, [])
+            self.assertTrue(any("CSV file not found" in warning for warning in catalog.warnings))
+
     def test_parser_skips_disabled_bad_rows_and_reports_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "sodas.csv"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, time
 from typing import Any
@@ -19,6 +20,8 @@ PERSISTABLE_SETTING_FIELDS = {
     "weekend_bedtime_hour",
     "latest_caffeine_hours_before_bed",
     "duplicate_lookback",
+    "caffeine_restrictions_enabled",
+    "pinned_pick_categories",
     "allow_diet_sodas",
     "allow_full_sugar_sodas",
     "chaos_mode_default",
@@ -76,6 +79,20 @@ def _int_or_default(value: str | int | None, default: int) -> int:
     return int(value)
 
 
+def _normalize_pick_category_values(value: str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for raw_part in value.split(","):
+        cleaned = re.sub(r"[^a-z0-9]+", "-", raw_part.strip().lower()).strip("-")
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        ordered.append(cleaned)
+    return tuple(ordered)
+
+
 @dataclass(frozen=True)
 class RuntimeRules:
     is_weekend: bool
@@ -85,6 +102,7 @@ class RuntimeRules:
     bedtime_hour: int
     latest_caffeine_hours_before_bed: int
     duplicate_lookback: int
+    caffeine_restrictions_enabled: bool
     allow_diet_sodas: bool
     allow_full_sugar_sodas: bool
     reminder_enabled: bool
@@ -133,6 +151,8 @@ class Settings:
     weekend_bedtime_hour: int = 23
     latest_caffeine_hours_before_bed: int = 6
     duplicate_lookback: int = 4
+    caffeine_restrictions_enabled: bool = True
+    pinned_pick_categories: str = ""
     allow_diet_sodas: bool = True
     allow_full_sugar_sodas: bool = True
     csv_path: str = "/data/sample_sodas.csv"
@@ -217,6 +237,7 @@ class Settings:
             weekend_bedtime_hour=int(os.getenv("WEEKEND_BEDTIME_HOUR", os.getenv("BEDTIME_HOUR", "23"))),
             latest_caffeine_hours_before_bed=int(os.getenv("LATEST_CAFFEINE_HOURS_BEFORE_BED", "6")),
             duplicate_lookback=int(os.getenv("DUPLICATE_LOOKBACK", "4")),
+            caffeine_restrictions_enabled=parse_bool(os.getenv("CAFFEINE_RESTRICTIONS_ENABLED"), True),
             csv_path=os.getenv("CSV_PATH", "/data/sample_sodas.csv"),
             database_path=os.getenv("DATABASE_PATH", "/data/soda_picker.db"),
             backup_dir=os.getenv("BACKUP_DIR", "/data/backups"),
@@ -256,12 +277,17 @@ class Settings:
             bedtime_hour=bedtime_hour,
             latest_caffeine_hours_before_bed=self.latest_caffeine_hours_before_bed,
             duplicate_lookback=self.duplicate_lookback,
+            caffeine_restrictions_enabled=self.caffeine_restrictions_enabled,
             allow_diet_sodas=self.allow_diet_sodas,
             allow_full_sugar_sodas=self.allow_full_sugar_sodas,
             reminder_enabled=self.reminder_enabled,
             reminder_time=self.reminder_time_value,
             effective_caffeine_stop_hour=effective_cutoff_hour,
         )
+
+    @property
+    def pinned_pick_category_keys(self) -> tuple[str, ...]:
+        return _normalize_pick_category_values(self.pinned_pick_categories)
 
     def with_overrides(self, overrides: dict[str, str]) -> "Settings":
         values: dict[str, Any] = {}
@@ -270,7 +296,9 @@ class Settings:
                 continue
             if key in {"daily_caffeine_limit_mg", "weekend_daily_caffeine_limit_mg", "caffeine_cutoff_hour", "weekend_caffeine_cutoff_hour", "bedtime_hour", "weekend_bedtime_hour", "latest_caffeine_hours_before_bed", "duplicate_lookback"}:
                 values[key] = _int_or_default(raw_value, getattr(self, key))
-            elif key in {"chaos_mode_default", "reminder_enabled", "allow_diet_sodas", "allow_full_sugar_sodas"}:
+            elif key == "pinned_pick_categories":
+                values[key] = ",".join(_normalize_pick_category_values(raw_value))
+            elif key in {"chaos_mode_default", "reminder_enabled", "caffeine_restrictions_enabled", "allow_diet_sodas", "allow_full_sugar_sodas"}:
                 values[key] = parse_bool(raw_value, getattr(self, key))
             else:
                 values[key] = raw_value
@@ -336,7 +364,9 @@ class Settings:
 def normalize_override_payload(form_data: dict[str, str]) -> dict[str, str]:
     normalized: dict[str, str] = {}
     for key in PERSISTABLE_SETTING_FIELDS:
-        if key in {"chaos_mode_default", "reminder_enabled", "allow_diet_sodas", "allow_full_sugar_sodas"}:
+        if key == "pinned_pick_categories":
+            normalized[key] = ",".join(_normalize_pick_category_values(form_data.get(key)))
+        elif key in {"chaos_mode_default", "reminder_enabled", "caffeine_restrictions_enabled", "allow_diet_sodas", "allow_full_sugar_sodas"}:
             normalized[key] = "true" if parse_bool(form_data.get(key), False) else "false"
         else:
             normalized[key] = (form_data.get(key) or "").strip()

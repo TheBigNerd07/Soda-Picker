@@ -24,7 +24,13 @@
             <article class="stat-chip">
               <span class="stat-label">Rule set</span>
               <strong class="stat-chip-value">{{ rules.rules_label }}</strong>
-              <span class="stat-note">Cutoff {{ rules.effective_cutoff_display }}</span>
+              <span class="stat-note">
+                {% if rules.caffeine_restrictions_enabled %}
+                  Cutoff {{ rules.effective_cutoff_display }}
+                {% else %}
+                  Caffeine guardrails off
+                {% endif %}
+              </span>
             </article>
             <article class="stat-chip">
               <span class="stat-label">Inventory ready</span>
@@ -58,6 +64,17 @@
                   </select>
                 </label>
                 <p class="helper-text">{{ pick_style_description }}</p>
+                <label>
+                  <span>Available at</span>
+                  <select name="availability_source">
+                    {% for option in availability_source_options %}
+                      <option value="{{ option.value }}" {% if option.value == availability_source_value %}selected{% endif %}>
+                        {{ option.label }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <p class="helper-text">{{ availability_source_description }}</p>
                 <label class="toggle">
                   <input type="checkbox" name="chaos_mode" value="true" {% if chaos_mode %}checked{% endif %}>
                   <span>Treat mode</span>
@@ -133,6 +150,9 @@
                 {% if recommendation.pick_style_value != 'any' %}
                   <span class="badge accent">{{ recommendation.pick_style_label }}</span>
                 {% endif %}
+                {% if availability_source_value != 'inventory' %}
+                  <span class="badge">{{ availability_source_label }}</span>
+                {% endif %}
                 <span class="badge tone-cola">{{ recommendation.soda.soda.category }}</span>
                 <span class="badge tone-mint">{{ recommendation.soda.soda.caffeine_label }}</span>
                 {% if recommendation.soda.soda.sugar_g is not none %}
@@ -178,6 +198,9 @@
 
               <p class="reason lead-reason">{{ recommendation.reason }}</p>
               <p class="helper-text">{{ recommendation.rules_summary }}</p>
+              {% if availability_source_value != 'inventory' %}
+                <p class="helper-text">Filtered against {{ availability_source_label }}.</p>
+              {% endif %}
 
               {% if recommendation.rejected_options %}
                 <div class="mini-panel">
@@ -196,6 +219,7 @@
             {% if can_write %}
               <form action="/pick" method="post" class="inline-form">
                 <input type="hidden" name="pick_style" value="{{ recommendation.pick_style_value }}">
+                <input type="hidden" name="availability_source" value="{{ availability_source_value }}">
                 {% if chaos_mode %}
                   <input type="hidden" name="chaos_mode" value="true">
                 {% endif %}
@@ -241,6 +265,9 @@
             <div class="recommendation-copy">
               <p class="reason lead-reason">{{ recommendation.reason }}</p>
               <p class="helper-text">{{ recommendation.rules_summary }}</p>
+              {% if availability_source_value != 'inventory' %}
+                <p class="helper-text">Filtered against {{ availability_source_label }}.</p>
+              {% endif %}
               {% if recommendation.rejected_options %}
                 <div class="mini-panel">
                   <p class="mini-panel-title">What blocked things?</p>
@@ -267,6 +294,9 @@
               <div class="badge-row">
                 <span class="badge tone-mint">{{ rules.rules_label }}</span>
                 <span class="badge">{{ available_count }} in stock</span>
+                {% if availability_source_value != 'inventory' %}
+                  <span class="badge">{{ availability_source_label }}</span>
+                {% endif %}
                 <span class="badge">{{ daily_total|number }} mg today</span>
               </div>
               <p class="reason lead-reason">
@@ -375,10 +405,16 @@
             <dt>No soda before</dt>
             <dd>{{ rules.no_soda_before_display }}</dd>
           </div>
-          <div>
-            <dt>Effective caffeine squeeze</dt>
-            <dd>{{ rules.effective_cutoff_display }}</dd>
-          </div>
+                <div>
+                  <dt>Effective caffeine squeeze</dt>
+                  <dd>
+                    {% if rules.caffeine_restrictions_enabled %}
+                      {{ rules.effective_cutoff_display }}
+                    {% else %}
+                      Off for this account
+                    {% endif %}
+                  </dd>
+                </div>
           <div>
             <dt>Bedtime</dt>
             <dd>{{ rules.bedtime_display }}</dd>

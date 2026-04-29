@@ -1370,6 +1370,10 @@ textarea {
   align-items: start;
 }
 
+.settings-page .settings-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .settings-page .settings-values-panel {
   display: grid;
   gap: 0.9rem;
@@ -2760,6 +2764,92 @@ a:focus-visible {
   gap: 0.8rem;
 }
 
+.location-card-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.location-folder-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.location-folder {
+  overflow: hidden;
+  border: 1px solid rgba(204, 220, 234, 0.1);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.location-folder summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 1rem 1.05rem;
+}
+
+.location-folder summary::-webkit-details-marker {
+  display: none;
+}
+
+.location-folder summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.location-folder summary p {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.location-folder[open] summary {
+  border-bottom: 1px solid rgba(204, 220, 234, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.location-folder .location-checklist {
+  padding: 1rem;
+}
+
+.location-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.location-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(204, 220, 234, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.location-option span {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.location-option small {
+  color: var(--muted);
+}
+
+.catalog-pagination {
+  margin-top: 1rem;
+}
+
+.catalog-pagination-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
 @media (max-width: 980px) {
   .page-stack {
     gap: 1.4rem;
@@ -3581,6 +3671,7 @@ textarea {
   .stats-grid,
   .overview-strip,
   .form-grid,
+  .location-checklist,
   .training-grid,
   .training-summary,
   .feature-list,
@@ -3626,6 +3717,11 @@ textarea {
   .button-row .button,
   .action-grid .button {
     width: 100%;
+  }
+
+  .location-folder summary > div {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .recommendation-actions .inline-form,
@@ -3715,4 +3811,36 @@ textarea {
 
 .standalone-app .site-header {
   top: auto;
+}
+
+.mobile-settings-note {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .settings-page .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-page .settings-advanced-block {
+    display: none;
+  }
+
+  .settings-page .settings-advanced-action {
+    display: none;
+  }
+
+  .settings-page .mobile-settings-note {
+    display: block;
+  }
+
+  .settings-page .page-header-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .settings-page .page-header-actions .button {
+    min-width: 0;
+    width: 100%;
+  }
 }

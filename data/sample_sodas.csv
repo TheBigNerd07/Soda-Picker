@@ -29,3 +29,105 @@ Barq's Cream Soda,Coca-Cola,0,44,cream-soda,false,true,classic,7,true
 Canada Dry Ginger Ale,Coca-Cola,0,32,ginger-ale,false,true,classic,9,true
 Seagram's Ginger Ale,Keurig Dr Pepper,0,32,ginger-ale,false,true,classic,8,true
 Squirt,Keurig Dr Pepper,0,44,grapefruit,false,true,grapefruit,7,true
+Diet Coke,Coca-Cola,46,0,cola,true,false,zero-sugar;classic,10,true
+Coke Zero Sugar,Coca-Cola,34,0,cola,true,false,zero-sugar;classic,10,true
+Cherry Coke Zero Sugar,Coca-Cola,34,0,cola,true,false,zero-sugar;cherry,8,true
+Vanilla Coke Zero Sugar,Coca-Cola,34,0,cola,true,false,zero-sugar;vanilla,7,true
+Sprite Zero Sugar,Coca-Cola,0,0,lemon-lime,true,true,zero-sugar;classic,9,true
+Fanta Orange Zero Sugar,Coca-Cola,0,0,orange,true,true,zero-sugar;fruit,7,true
+Fanta Pineapple,Coca-Cola,0,44,pineapple,false,true,tropical,8,true
+Fanta Peach,Coca-Cola,0,44,peach,false,true,fruit,7,true
+Fanta Berry,Coca-Cola,0,44,berry,false,true,fruit,7,true
+Barq's Zero Sugar Root Beer,Coca-Cola,0,0,root-beer,true,true,zero-sugar;root-beer,7,true
+Pibb Xtra,Coca-Cola,40,41,cola,false,false,spiced;pepper,8,true
+Mello Yello,Coca-Cola,51,47,citrus,false,false,citrus;high-caffeine,8,true
+Mello Yello Zero Sugar,Coca-Cola,51,0,citrus,true,false,zero-sugar;citrus,7,true
+Fresca,Coca-Cola,0,0,grapefruit,true,true,zero-sugar;grapefruit,8,true
+Schweppes Ginger Ale,Coca-Cola,0,32,ginger-ale,false,true,classic,7,true
+Schweppes Tonic Water,Coca-Cola,0,32,tonic,false,true,bitter,5,true
+Pepsi Zero Sugar,PepsiCo,69,0,cola,true,false,zero-sugar;high-caffeine,9,true
+Diet Pepsi,PepsiCo,35,0,cola,true,false,zero-sugar;classic,8,true
+Pepsi Lime,PepsiCo,38,41,cola,false,false,lime,7,true
+Pepsi Wild Cherry,PepsiCo,38,42,cola,false,false,cherry,7,true
+Wild Cherry Pepsi Zero Sugar,PepsiCo,42,0,cola,true,false,zero-sugar;cherry,7,true
+Starry Zero Sugar,PepsiCo,0,0,lemon-lime,true,true,zero-sugar;classic,7,true
+Mountain Dew Zero Sugar,PepsiCo,68,0,citrus,true,false,zero-sugar;high-caffeine,9,true
+Diet Mountain Dew,PepsiCo,55,0,citrus,true,false,zero-sugar;citrus,8,true
+Mountain Dew LiveWire,PepsiCo,54,46,orange,false,false,citrus;orange,8,true
+Mountain Dew Major Melon,PepsiCo,54,46,watermelon,false,false,watermelon,8,true
+Mountain Dew Spark,PepsiCo,54,46,raspberry,false,false,berry;tart,7,true
+Manzanita Sol,PepsiCo,0,40,apple,false,true,apple,8,true
+Ting,PepsiCo,0,35,grapefruit,false,true,caribbean;grapefruit,8,true
+Dr Pepper Zero Sugar,Dr Pepper,41,0,cola,true,false,zero-sugar;spiced,9,true
+Diet Dr Pepper,Dr Pepper,41,0,cola,true,false,zero-sugar;spiced,9,true
+Dr Pepper Cherry Zero Sugar,Dr Pepper,41,0,cola,true,false,zero-sugar;cherry,7,true
+Dr Pepper Strawberries & Cream,Dr Pepper,41,39,cream-soda,false,false,berry;cream,8,true
+Dr Pepper Strawberries & Cream Zero Sugar,Dr Pepper,41,0,cream-soda,true,false,zero-sugar;berry;cream,7,true
+7UP Zero Sugar,Keurig Dr Pepper,0,0,lemon-lime,true,true,zero-sugar;classic,8,true
+A&W Zero Sugar Root Beer,Keurig Dr Pepper,0,0,root-beer,true,true,zero-sugar;root-beer,8,true
+A&W Zero Sugar Cream Soda,Keurig Dr Pepper,0,0,cream-soda,true,true,zero-sugar;classic,7,true
+Canada Dry Zero Sugar Ginger Ale,Keurig Dr Pepper,0,0,ginger-ale,true,true,zero-sugar;classic,7,true
+Seagram's Zero Sugar Ginger Ale,Keurig Dr Pepper,0,0,ginger-ale,true,true,zero-sugar;classic,7,true
+Sun Drop,Keurig Dr Pepper,63,45,citrus,false,false,citrus;high-caffeine,8,true
+Diet Sun Drop,Keurig Dr Pepper,63,0,citrus,true,false,zero-sugar;citrus,7,true
+Sunkist Zero Sugar,Keurig Dr Pepper,41,0,orange,true,false,zero-sugar;fruit,7,true
+Sunkist Grape,Keurig Dr Pepper,0,44,grape,false,true,fruit,7,true
+Orange Crush Zero Sugar,Keurig Dr Pepper,0,0,orange,true,true,zero-sugar;fruit,7,true
+Crush Peach,Keurig Dr Pepper,0,44,peach,false,true,fruit,7,true
+Crush Pineapple,Keurig Dr Pepper,0,44,pineapple,false,true,tropical,7,true
+Crush Watermelon,Keurig Dr Pepper,0,44,watermelon,false,true,fruit,6,true
+Squirt Zero Sugar,Keurig Dr Pepper,0,0,grapefruit,true,true,zero-sugar;grapefruit,6,true
+RC Cola,Royal Crown,43,43,cola,false,false,classic,7,true
+Diet Rite Cola,Royal Crown,0,0,cola,true,true,zero-sugar;classic,6,true
+Big Red,Big Red,0,46,cream-soda,false,true,cream;regional,8,true
+Big Blue,Big Red,0,46,berry,false,true,berry;regional,7,true
+Cheerwine,Cheerwine,0,45,cherry,false,true,cherry;regional,8,true
+Diet Cheerwine,Cheerwine,0,0,cherry,true,true,zero-sugar;cherry,7,true
+Vernors,Canada Dry,0,37,ginger-ale,false,true,ginger;regional,8,true
+Ale-8-One,Ale-8-One,37,38,ginger-ale,false,false,regional;citrus,7,true
+Stewart's Root Beer,Stewart's,0,44,root-beer,false,true,craft,7,true
+Stewart's Orange 'n Cream,Stewart's,0,44,cream-soda,false,true,orange;cream,7,true
+Stewart's Key Lime,Stewart's,0,43,lime,false,true,citrus;craft,6,true
+IBC Root Beer,IBC,0,44,root-beer,false,true,craft,8,true
+IBC Cream Soda,IBC,0,45,cream-soda,false,true,craft,7,true
+Boylan Cane Cola,Boylan,34,38,cola,false,false,cane-sugar;craft,7,true
+Boylan Black Cherry,Boylan,0,42,cherry,false,true,craft,7,true
+Boylan Orange,Boylan,0,42,orange,false,true,craft,6,true
+Sprecher Root Beer,Sprecher,0,44,root-beer,false,true,craft;honey,7,true
+Sprecher Cream Soda,Sprecher,0,44,cream-soda,false,true,craft;honey,7,true
+Faygo Cola,Faygo,35,41,cola,false,false,regional,6,true
+Faygo Redpop,Faygo,0,44,strawberry,false,true,regional;fruit,7,true
+Faygo Rock & Rye,Faygo,0,44,cream-soda,false,true,regional;cream,7,true
+Faygo Moon Mist,Faygo,0,44,citrus,false,true,regional;citrus,7,true
+Faygo Cream Soda,Faygo,0,44,cream-soda,false,true,regional;cream,7,true
+Nehi Grape,Nehi,0,45,grape,false,true,classic,7,true
+Nehi Orange,Nehi,0,45,orange,false,true,classic,7,true
+Jarritos Mandarin,Jarritos,0,37,orange,false,true,fruit;mexican,8,true
+Jarritos Lime,Jarritos,0,37,lime,false,true,citrus;mexican,8,true
+Jarritos Grapefruit,Jarritos,0,37,grapefruit,false,true,citrus;mexican,8,true
+Jarritos Guava,Jarritos,0,37,guava,false,true,tropical;mexican,7,true
+Jarritos Pineapple,Jarritos,0,37,pineapple,false,true,tropical;mexican,7,true
+Jarritos Tamarind,Jarritos,0,38,tamarind,false,true,tart;mexican,7,true
+Jarritos Fruit Punch,Jarritos,0,37,fruit-punch,false,true,fruit;mexican,7,true
+Sidral Mundet,Manzana Lift,0,35,apple,false,true,mexican;apple,7,true
+Inca Kola,Coca-Cola,0,39,cream-soda,false,true,peru;regional,8,true
+Irn-Bru,A.G. Barr,0,37,orange,false,true,scotland;regional,8,true
+Guarana Antarctica,Ambev,0,38,guarana,false,true,brazil;fruit,8,true
+Jupina,Cawy,0,42,pineapple,false,true,cuba;pineapple,7,true
+Kola Champagne,Goya,0,44,cream-soda,false,true,caribbean;vanilla,7,true
+Ramune Original,Hata,0,34,lemon-lime,false,true,japan;marble-bottle,7,true
+Ramune Melon,Hata,0,34,melon,false,true,japan;marble-bottle,7,true
+Ramune Strawberry,Hata,0,34,strawberry,false,true,japan;marble-bottle,7,true
+Ramune Lychee,Hata,0,34,lychee,false,true,japan;marble-bottle,6,true
+San Pellegrino Limonata,San Pellegrino,0,31,lemon,false,true,italy;citrus,7,true
+San Pellegrino Aranciata,San Pellegrino,0,32,orange,false,true,italy;citrus,7,true
+San Pellegrino Chinotto,San Pellegrino,0,33,cola,false,true,italy;bitter,6,true
+Cactus Cooler,Canada Dry,0,46,orange,false,true,orange;pineapple,7,true
+Slice Orange,Slice,0,35,orange,false,true,fruit,6,true
+Slice Lemon Lime,Slice,0,35,lemon-lime,false,true,citrus,6,true
+Shasta Cola,Shasta,35,41,cola,false,false,value,6,true
+Shasta Root Beer,Shasta,0,43,root-beer,false,true,value,6,true
+Shasta Tiki Punch,Shasta,0,44,fruit-punch,false,true,value,6,true
+Big K Cola,Big K,38,41,cola,false,false,value,6,true
+Big K Citrus Drop,Big K,54,46,citrus,false,false,value;high-caffeine,6,true
+Big K Orange,Big K,0,44,orange,false,true,value,6,true

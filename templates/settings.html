@@ -15,9 +15,9 @@
         {% if is_authenticated %}
           <a class="button tertiary" href="#taste-training">Taste training</a>
         {% endif %}
-        <a class="button tertiary" href="#exports">Exports and backups</a>
+        <a class="button tertiary settings-advanced-action" href="#exports">Exports and backups</a>
         {% if is_admin %}
-          <a class="button secondary" href="#user-accounts">Manage users</a>
+          <a class="button secondary settings-advanced-action" href="#user-accounts">Manage users</a>
         {% endif %}
       </div>
     </div>
@@ -29,7 +29,13 @@
     </section>
   {% endif %}
 
-  <section class="settings-grid">
+  <section class="panel content-panel mobile-settings-note" aria-label="Mobile settings note">
+    <p class="helper-text">
+      Settings stays focused on things you can actually change here. Exports, backups, and account management stay on larger screens so the mobile view stays usable.
+    </p>
+  </section>
+
+  <section class="settings-grid settings-grid-single">
     <article class="panel settings-form-panel">
       <div class="section-heading">
         <div>
@@ -85,10 +91,41 @@
           </label>
         </div>
         <div class="toggle-row">
+          <input type="hidden" name="caffeine_restrictions_enabled" value="false">
+          <label class="inline-check">
+            <input type="checkbox" name="caffeine_restrictions_enabled" value="true" {% if settings.caffeine_restrictions_enabled %}checked{% endif %}>
+            <span>Keep caffeine restrictions on</span>
+          </label>
+        </div>
+        <p class="helper-text">
+          Turn this off if this account should ignore daily caffeine caps and late-day caffeine penalties. The general no-soda-before time still stays on.
+        </p>
+        {% if pick_style_category_options %}
+          <section class="training-card top-gap">
+            <div>
+              <h3>Pin quick-access categories in the picker</h3>
+              <p class="helper-text">
+                These exact categories will show near the top of the dashboard soda mood / type list for this account.
+              </p>
+            </div>
+            <div class="training-options">
+              {% for option in pick_style_category_options %}
+                <label class="training-option">
+                  <input type="checkbox" name="pinned_pick_categories" value="{{ option.match_key }}" {% if option.match_key in settings.pinned_pick_category_keys %}checked{% endif %}>
+                  <span>
+                    <strong>{{ option.label }}</strong>
+                    <small>{{ option.description }}</small>
+                  </span>
+                </label>
+              {% endfor %}
+            </div>
+          </section>
+        {% endif %}
+        <div class="toggle-row">
           <input type="hidden" name="allow_diet_sodas" value="false">
           <label class="inline-check">
             <input type="checkbox" name="allow_diet_sodas" value="true" {% if settings.allow_diet_sodas %}checked{% endif %}>
-            <span>Allow diet / zero-sugar sodas</span>
+              <span>Allow diet / zero-sugar sodas</span>
           </label>
           <input type="hidden" name="allow_full_sugar_sodas" value="false">
           <label class="inline-check">
@@ -115,29 +152,6 @@
       <form action="/settings/reset" method="post" class="inline-form top-gap">
         <button type="submit" class="button tertiary">Clear saved overrides</button>
       </form>
-    </article>
-
-    <article class="panel settings-values-panel">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">Current values</p>
-          <h2>Live configuration map</h2>
-        </div>
-      </div>
-      <p class="helper-text settings-values-note">
-        Environment-backed values stay read-only here so you can verify what the container is actually using.
-      </p>
-      <dl class="detail-list large">
-        {% for key, value, source in settings_items %}
-          <div>
-            <dt>{{ key }}</dt>
-            <dd>
-              {{ value }}
-              <span class="badge {% if source == 'override' %}accent{% endif %} small">{{ source }}</span>
-            </dd>
-          </div>
-        {% endfor %}
-      </dl>
     </article>
   </section>
 
@@ -324,7 +338,7 @@
     {% endif %}
   </section>
 
-  <section class="dashboard-grid">
+  <section class="dashboard-grid settings-advanced-block">
     <div class="column-main">
       <section class="panel exports-panel" id="exports">
         <div class="section-heading">
@@ -414,7 +428,7 @@
   </section>
 
   {% if is_admin %}
-    <section class="panel content-panel top-gap" id="user-accounts">
+    <section class="panel content-panel top-gap settings-advanced-block" id="user-accounts">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Admin only</p>

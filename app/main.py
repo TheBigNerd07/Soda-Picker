@@ -18,9 +18,18 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .catalog import DEFAULT_ESTIMATED_CAFFEINE_MG, SodaCatalog
 from .config import Settings, parse_bool
 from .database import Database
+from .fountain_locations import (
+    apply_location_inventory,
+    build_preset_soda_ids,
+    group_catalog_items_by_company,
+    list_fountain_presets,
+    resolve_fountain_preset,
+)
 from .models import (
+    AvailabilitySourceOption,
     BackupFile,
     CatalogItem,
+    FountainLocation,
     PREFERENCE_NEUTRAL,
     RECOMMENDATION_FEEDBACK_OPTIONS,
     Soda,
@@ -31,7 +40,7 @@ from .models import (
     format_calendar_date,
     format_clock_time,
 )
-from .pick_styles import build_pick_style_groups, resolve_pick_style_option
+from .pick_styles import build_pick_style_groups, category_pick_styles, resolve_pick_style_option
 from .recommendation import RecommendationEngine
 from .security import (
     AUTH_COOKIE_NAME,
@@ -56,6 +65,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 LOGGER = logging.getLogger(__name__)
+CATALOG_PAGE_SIZE = 24
+APP_VERSION = "1.0.0"
 
 catalog = SodaCatalog(base_settings.csv_path)
 database = Database(base_settings.database_path)
@@ -107,21 +118,54 @@ def _app_build_stamp() -> str:
     return datetime.fromtimestamp(latest_mtime, tz=timezone.utc).strftime("%Y%m%d%H%M")
 
 
+APP_BUILD_STAMP = _app_build_stamp()
 templates.env.globals["asset_version"] = _asset_version
+templates.env.globals["app_build_stamp"] = APP_BUILD_STAMP
+
+
+def _ensure_runtime_paths(settings: Settings) -> None:
+    Path(settings.csv_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.database_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.backup_dir).mkdir(parents=True, exist_ok=True)
+
+
+def _catalog_health_snapshot() -> tuple[bool, list[str], int]:
+    sodas = catalog.list_sodas()
+    diagnostics = catalog.diagnostics
+    issues: list[str] = []
+    csv_path = Path(base_settings.csv_path)
+
+    if not csv_path.exists():
+        issues.append(f"Catalog CSV is missing at {csv_path}.")
+    if diagnostics.loaded_rows <= 0:
+        if diagnostics.warnings:
+            issues.append(diagnostics.warnings[0])
+        else:
+            issues.append("No enabled sodas were loaded from the catalog CSV.")
+
+    return len(issues) == 0, issues, len(sodas)
+
+
+def _validate_catalog_startup() -> None:
+    ready, issues, _ = _catalog_health_snapshot()
+    if not ready:
+        raise RuntimeError("Catalog startup validation failed: " + " ".join(issues))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _ensure_runtime_paths(base_settings)
     database.initialize(base_settings)
     catalog.refresh(force=True)
+    _validate_catalog_startup()
     app.state.catalog = catalog
     app.state.database = database
     app.state.settings_store = settings_store
     yield
 
 
-app = FastAPI(title="Soda Picker", version="2.0.0", lifespan=lifespan)
-templates.env.globals["app_version_label"] = f"v{app.version} ({_app_build_stamp()})"
+app = FastAPI(title="Soda Picker", version=APP_VERSION, lifespan=lifespan)
+templates.env.globals["app_version_label"] = f"v{app.version} ({APP_BUILD_STAMP})"
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if base_settings.trusted_hosts_list:
@@ -192,6 +236,14 @@ def _parse_optional_date(raw_value: str | None) -> date | None:
     if not raw_value:
         return None
     return date.fromisoformat(raw_value)
+
+
+def _parse_positive_int(raw_value: str | None, default: int = 1) -> int:
+    try:
+        value = int((raw_value or "").strip())
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def _parse_optional_rating(raw_value: str | None) -> int | None:
@@ -278,6 +330,83 @@ def _build_catalog_items(local_now: datetime, *, user_id: int | None) -> list[Ca
         state = state_map.get(soda.id, SodaState(soda_id=soda.id, preference=PREFERENCE_NEUTRAL))
         items.append(CatalogItem(soda=soda, state=state))
     return items
+
+
+def _hydrate_fountain_locations(
+    locations: list[FountainLocation],
+    *,
+    catalog_items: list[CatalogItem],
+) -> list[FountainLocation]:
+    label_map = {item.id: item.display_name for item in catalog_items}
+    hydrated: list[FountainLocation] = []
+    for location in locations:
+        preset = resolve_fountain_preset(location.preset_key)
+        soda_labels = tuple(label_map[soda_id] for soda_id in location.soda_ids if soda_id in label_map)
+        hydrated.append(
+            FountainLocation(
+                id=location.id,
+                user_id=location.user_id,
+                name=location.name,
+                preset_key=location.preset_key,
+                preset_label=preset.label if preset is not None else "Custom",
+                soda_ids=location.soda_ids,
+                soda_labels=soda_labels,
+                updated_at_utc=location.updated_at_utc,
+            )
+        )
+    return hydrated
+
+
+def _build_availability_source_options(locations: list[FountainLocation]) -> list[AvailabilitySourceOption]:
+    options = [
+        AvailabilitySourceOption(
+            value="inventory",
+            label="Home inventory",
+            description="Use your personal in-stock catalog list.",
+        )
+    ]
+    for location in locations:
+        description = f"{location.soda_count} menu soda"
+        if location.soda_count != 1:
+            description += "s"
+        if location.preset_key:
+            description += f" from {location.preset_label.lower()}"
+        options.append(
+            AvailabilitySourceOption(
+                value=location.source_value,
+                label=location.name,
+                description=description,
+            )
+        )
+    return options
+
+
+def _resolve_availability_source(
+    *,
+    base_items: list[CatalogItem],
+    locations: list[FountainLocation],
+    raw_value: str | None,
+) -> tuple[list[CatalogItem], AvailabilitySourceOption]:
+    options = _build_availability_source_options(locations)
+    fallback = options[0]
+    cleaned = (raw_value or "").strip()
+    if not cleaned or cleaned == "inventory":
+        return base_items, fallback
+
+    for location in locations:
+        if location.source_value == cleaned:
+            return (
+                apply_location_inventory(base_items, location.soda_ids),
+                AvailabilitySourceOption(
+                    value=location.source_value,
+                    label=location.name,
+                    description=(
+                        f"Only the sodas saved for {location.name} stay in play. "
+                        f"{location.soda_count} menu soda{'s' if location.soda_count != 1 else ''} loaded."
+                    ),
+                ),
+            )
+    return base_items, fallback
 
 
 def _merged_recent_soda_ids(user_id: int | None, limit: int) -> list[str]:
@@ -383,6 +512,7 @@ def _build_common_context(
         passport_summary: PassportSummary | None = None
         wishlist_entries = []
         wishlist_summary: WishlistSummary | None = None
+        fountain_locations: list[FountainLocation] = []
     else:
         today_entries = database.get_today_entries(user_id, local_now)
         daily_total = database.get_today_caffeine_total(user_id, local_now)
@@ -397,6 +527,10 @@ def _build_common_context(
         passport_summary = database.get_passport_summary(user_id)
         wishlist_entries = database.list_wishlist_entries(user_id, limit=8, include_archived=False)
         wishlist_summary = database.get_wishlist_summary(user_id)
+        fountain_locations = _hydrate_fountain_locations(
+            database.list_fountain_locations(user_id),
+            catalog_items=catalog_items,
+        )
 
     if passport_summary is None:
         passport_summary = PassportSummary()
@@ -422,6 +556,8 @@ def _build_common_context(
         "recent_passport_entries": passport_entries,
         "wishlist_summary": wishlist_summary,
         "recent_wishlist_entries": wishlist_entries,
+        "fountain_locations": fountain_locations,
+        "fountain_preset_options": list_fountain_presets(),
     }
     context.update(_build_auth_context(request, settings=settings, user=user))
     return context
@@ -437,6 +573,7 @@ def _dashboard_context(
     recommendation_id: int | None = None,
     chaos_mode: bool | None = None,
     pick_style_value: str | None = None,
+    availability_source_value: str | None = None,
 ) -> dict[str, Any]:
     context = _build_common_context(
         request,
@@ -444,8 +581,20 @@ def _dashboard_context(
         local_now=local_now,
         flash_message=flash_message,
     )
-    pick_style_groups = build_pick_style_groups(context["catalog_items"])
-    selected_pick_style = resolve_pick_style_option(pick_style_value, context["catalog_items"])
+    pick_style_groups = build_pick_style_groups(
+        context["catalog_items"],
+        pinned_category_keys=settings.pinned_pick_category_keys,
+    )
+    selected_pick_style = resolve_pick_style_option(
+        pick_style_value,
+        context["catalog_items"],
+        pinned_category_keys=settings.pinned_pick_category_keys,
+    )
+    _, selected_source = _resolve_availability_source(
+        base_items=context["catalog_items"],
+        locations=context["fountain_locations"],
+        raw_value=availability_source_value,
+    )
     context.update(
         {
             "recommendation": recommendation,
@@ -455,6 +604,10 @@ def _dashboard_context(
             "pick_style_value": selected_pick_style.value,
             "pick_style_label": selected_pick_style.label,
             "pick_style_description": selected_pick_style.description,
+            "availability_source_options": _build_availability_source_options(context["fountain_locations"]),
+            "availability_source_value": selected_source.value,
+            "availability_source_label": selected_source.label,
+            "availability_source_description": selected_source.description,
             "available_count": sum(1 for item in context["catalog_items"] if item.state.is_available),
             "favorite_count": sum(1 for item in context["catalog_items"] if item.state.preference == "favorite"),
             "manual_entry_time": local_now.strftime("%Y-%m-%dT%H:%M"),
@@ -489,6 +642,7 @@ async def dashboard(request: Request) -> HTMLResponse:
         settings=settings,
         local_now=local_now,
         flash_message=_parse_flash(request),
+        availability_source_value=request.query_params.get("availability_source"),
     )
     return templates.TemplateResponse(request, "index.html", context)
 
@@ -606,8 +760,22 @@ async def pick_soda(request: Request) -> HTMLResponse:
     local_now = settings.local_now()
     rules = settings.effective_rules(local_now)
     chaos_mode = parse_bool(form.get("chaos_mode"), settings.chaos_mode_default)
-    catalog_items = _build_catalog_items(local_now, user_id=user.id)
-    pick_style = resolve_pick_style_option(str(form.get("pick_style", "")).strip(), catalog_items)
+    base_catalog_items = _build_catalog_items(local_now, user_id=user.id)
+    locations = _hydrate_fountain_locations(
+        database.list_fountain_locations(user.id),
+        catalog_items=base_catalog_items,
+    )
+    availability_source_value = str(form.get("availability_source", "")).strip() or "inventory"
+    catalog_items, selected_source = _resolve_availability_source(
+        base_items=base_catalog_items,
+        locations=locations,
+        raw_value=availability_source_value,
+    )
+    pick_style = resolve_pick_style_option(
+        str(form.get("pick_style", "")).strip(),
+        catalog_items,
+        pinned_category_keys=settings.pinned_pick_category_keys,
+    )
     today_entries = database.get_today_entries(user.id, local_now)
     daily_total = database.get_today_caffeine_total(user.id, local_now)
     training_profile = profile_from_storage(database.get_taste_training(user.id))
@@ -632,6 +800,7 @@ async def pick_soda(request: Request) -> HTMLResponse:
         recommendation_id=recommendation_id,
         chaos_mode=chaos_mode,
         pick_style_value=pick_style.value,
+        availability_source_value=selected_source.value,
     )
     return templates.TemplateResponse(request, "index.html", context)
 
@@ -810,14 +979,15 @@ async def add_wishlist_from_catalog(request: Request) -> RedirectResponse:
         return _redirect_with_flash("/login", "Sign in to save wishlist entries.")
 
     form = await request.form()
+    return_to = _safe_next_path(str(form.get("return_to", "/catalog")))
     soda_id = str(form.get("soda_id", "")).strip()
     soda = catalog.get_by_id(soda_id)
     if soda is None:
-        return _redirect_with_flash("/catalog", "That soda is no longer in the catalog.")
+        return _redirect_with_flash(return_to, "That soda is no longer in the catalog.")
 
     existing = database.find_active_wishlist_entry(user.id, soda_name=soda.name, brand=soda.brand)
     if existing is not None:
-        return _redirect_with_flash("/catalog", f"{existing.display_name} is already on the active wishlist.")
+        return _redirect_with_flash(return_to, f"{existing.display_name} is already on the active wishlist.")
 
     database.add_wishlist_entry(
         user.id,
@@ -831,7 +1001,7 @@ async def add_wishlist_from_catalog(request: Request) -> RedirectResponse:
         status="active",
         notes="Added from the catalog page.",
     )
-    return _redirect_with_flash("/catalog", f"Added {soda.display_name} to your wishlist.")
+    return _redirect_with_flash(return_to, f"Added {soda.display_name} to your wishlist.")
 
 
 @app.post("/wishlist/from-passport")
@@ -1203,6 +1373,27 @@ async def catalog_page(request: Request) -> HTMLResponse:
         local_now=local_now,
         flash_message=_parse_flash(request),
     )
+    all_catalog_items = context["catalog_items"]
+    total_items = len(all_catalog_items)
+    total_pages = max(1, (total_items + CATALOG_PAGE_SIZE - 1) // CATALOG_PAGE_SIZE)
+    current_page = min(_parse_positive_int(request.query_params.get("page"), 1), total_pages)
+    start_index = (current_page - 1) * CATALOG_PAGE_SIZE
+    end_index = start_index + CATALOG_PAGE_SIZE
+    context.update(
+        {
+            "catalog_total_count": total_items,
+            "catalog_page_items": all_catalog_items[start_index:end_index],
+            "catalog_company_groups": group_catalog_items_by_company(all_catalog_items),
+            "catalog_current_page": current_page,
+            "catalog_total_pages": total_pages,
+            "catalog_has_prev_page": current_page > 1,
+            "catalog_has_next_page": current_page < total_pages,
+            "catalog_prev_page": current_page - 1,
+            "catalog_next_page": current_page + 1,
+            "catalog_page_numbers": tuple(range(1, total_pages + 1)),
+            "catalog_page_url": f"/catalog?page={current_page}#catalog-list",
+        }
+    )
     return templates.TemplateResponse(request, "catalog.html", context)
 
 
@@ -1213,9 +1404,10 @@ async def save_catalog_state(request: Request) -> RedirectResponse:
         return _redirect_with_flash("/login", "Sign in to save catalog controls.")
 
     form = await request.form()
+    return_to = _safe_next_path(str(form.get("return_to", "/catalog")))
     soda_id = str(form.get("soda_id", "")).strip()
     if not soda_id:
-        return _redirect_with_flash("/catalog", "Missing soda ID.")
+        return _redirect_with_flash(return_to, "Missing soda ID.")
 
     database.save_soda_state(
         user.id,
@@ -1224,7 +1416,7 @@ async def save_catalog_state(request: Request) -> RedirectResponse:
         preference=str(form.get("preference", "neutral")).strip() or "neutral",
         temp_ban_until=_parse_optional_date(str(form.get("temp_ban_until", "")).strip() or None),
     )
-    return _redirect_with_flash("/catalog", "Saved catalog controls.")
+    return _redirect_with_flash(return_to, "Saved catalog controls.")
 
 
 @app.post("/catalog/add")
@@ -1377,6 +1569,87 @@ async def import_catalog(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "catalog.html", context)
 
 
+@app.post("/locations/create")
+async def create_fountain_location(request: Request) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to save fountain locations.")
+
+    form = await request.form()
+    catalog_items = _build_catalog_items(settings.local_now(), user_id=user.id)
+    valid_soda_ids = {item.id for item in catalog_items}
+    preset_key = str(form.get("preset_key", "")).strip().lower()
+    selected_soda_ids = tuple(
+        soda_id
+        for soda_id in (str(value).strip() for value in form.getlist("soda_ids"))
+        if soda_id and soda_id in valid_soda_ids
+    )
+    if not selected_soda_ids and preset_key:
+        selected_soda_ids = build_preset_soda_ids(catalog_items, preset_key)
+
+    if not selected_soda_ids:
+        return _redirect_with_flash("/catalog", "Choose at least one soda for that location.")
+
+    try:
+        location = database.create_fountain_location(
+            user.id,
+            name=str(form.get("name", "")).strip(),
+            preset_key=preset_key,
+            soda_ids=selected_soda_ids,
+        )
+    except ValueError as exc:
+        return _redirect_with_flash("/catalog", str(exc))
+
+    return _redirect_with_flash("/catalog", f"Saved fountain location {location.name}.")
+
+
+@app.post("/locations/{location_id}/update")
+async def update_fountain_location(request: Request, location_id: int) -> RedirectResponse:
+    settings, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to update fountain locations.")
+
+    form = await request.form()
+    catalog_items = _build_catalog_items(settings.local_now(), user_id=user.id)
+    valid_soda_ids = {item.id for item in catalog_items}
+    preset_key = str(form.get("preset_key", "")).strip().lower()
+    selected_soda_ids = tuple(
+        soda_id
+        for soda_id in (str(value).strip() for value in form.getlist("soda_ids"))
+        if soda_id and soda_id in valid_soda_ids
+    )
+    if not selected_soda_ids and preset_key:
+        selected_soda_ids = build_preset_soda_ids(catalog_items, preset_key)
+
+    if not selected_soda_ids:
+        return _redirect_with_flash("/catalog", "Choose at least one soda for that location.")
+
+    try:
+        updated = database.update_fountain_location(
+            user.id,
+            location_id,
+            name=str(form.get("name", "")).strip(),
+            preset_key=preset_key,
+            soda_ids=selected_soda_ids,
+        )
+    except ValueError as exc:
+        return _redirect_with_flash("/catalog", str(exc))
+
+    if updated is None:
+        return _redirect_with_flash("/catalog", "That fountain location no longer exists.")
+    return _redirect_with_flash("/catalog", f"Updated fountain location {updated.name}.")
+
+
+@app.post("/locations/{location_id}/delete")
+async def delete_fountain_location(request: Request, location_id: int) -> RedirectResponse:
+    _, user = _settings_for_request(request)
+    if user is None:
+        return _redirect_with_flash("/login", "Sign in to delete fountain locations.")
+    if not database.delete_fountain_location(user.id, location_id):
+        return _redirect_with_flash("/catalog", "That fountain location no longer exists.")
+    return _redirect_with_flash("/catalog", "Deleted fountain location.")
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request) -> HTMLResponse:
     settings, user = _settings_for_request(request)
@@ -1387,11 +1660,10 @@ async def settings_page(request: Request) -> HTMLResponse:
         local_now=local_now,
         flash_message=_parse_flash(request),
     )
-    override_keys = settings_store.override_keys(user.id) if user is not None else set()
-    context["settings_items"] = settings.display_items(override_keys)
     context["managed_users"] = database.list_users() if user is not None and user.is_admin else []
     context["managed_user_count"] = database.count_users()
     context["managed_admin_count"] = database.count_admin_users()
+    context["pick_style_category_options"] = category_pick_styles(context["catalog_items"])
     if user is not None:
         context.update(_build_training_context(user_id=user.id, catalog_items=context["catalog_items"]))
     return templates.TemplateResponse(request, "settings.html", context)
@@ -1404,8 +1676,12 @@ async def save_settings(request: Request) -> RedirectResponse:
         return _redirect_with_flash("/login", "Sign in to save settings.")
 
     form = await request.form()
+    payload = {key: str(value) for key, value in form.items()}
+    payload["pinned_pick_categories"] = ",".join(
+        str(value).strip() for value in form.getlist("pinned_pick_categories") if str(value).strip()
+    )
     try:
-        settings_store.save(user.id, {key: str(value) for key, value in form.items()})
+        settings_store.save(user.id, payload)
     except ValueError as exc:
         LOGGER.warning("Invalid settings override: %s", exc)
         return _redirect_with_flash("/settings", f"Could not save settings: {exc}")
@@ -1657,6 +1933,7 @@ async def web_app_manifest() -> Response:
     return FileResponse(
         Path("static/manifest.webmanifest"),
         media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"},
     )
 
 
@@ -1665,25 +1942,33 @@ async def service_worker() -> Response:
     return FileResponse(
         Path("static/service-worker.js"),
         media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/"},
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
     )
 
 
 @app.get("/healthz", response_class=JSONResponse)
 async def healthz() -> JSONResponse:
     local_now = base_settings.local_now()
+    catalog_ready, catalog_issues, sodas_loaded = _catalog_health_snapshot()
+    diagnostics = catalog.diagnostics
     payload = {
-        "status": "ok",
+        "status": "ok" if catalog_ready else "error",
+        "version": app.version,
+        "build": APP_BUILD_STAMP,
         "local_time": local_now.isoformat(),
         "timezone": base_settings.timezone_name,
-        "sodas_loaded": len(catalog.list_sodas()),
+        "sodas_loaded": sodas_loaded,
+        "catalog_ready": catalog_ready,
+        "catalog_issues": catalog_issues,
+        "catalog_invalid_rows": diagnostics.invalid_rows,
+        "catalog_warning_count": len(diagnostics.warnings),
         "csv_path": base_settings.csv_path,
         "database_path": base_settings.database_path,
         "user_count": database.count_users(),
         "admin_user_count": database.count_admin_users(),
         "access_control_mode": base_settings.access_control_mode,
     }
-    return JSONResponse(payload)
+    return JSONResponse(payload, status_code=200 if catalog_ready else 503)
 
 
 if __name__ == "__main__":

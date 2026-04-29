@@ -1,4 +1,4 @@
-const CACHE_NAME = "soda-picker-v1";
+const CACHE_NAME = "soda-picker-v1-0-0";
 const SHELL_ASSETS = [
   "/",
   "/manifest.webmanifest",

@@ -240,6 +240,13 @@ class RecommendationHistoryEntry:
 
 
 @dataclass(frozen=True)
+class AvailabilitySourceOption:
+    value: str
+    label: str
+    description: str
+
+
+@dataclass(frozen=True)
 class UserAccount:
     id: int
     username: str
@@ -393,6 +400,32 @@ class WishlistSummary:
     found_entries: int = 0
     archived_entries: int = 0
     high_priority_entries: int = 0
+
+
+@dataclass(frozen=True)
+class FountainLocation:
+    id: int
+    user_id: int
+    name: str
+    preset_key: str = ""
+    preset_label: str = "Custom"
+    soda_ids: tuple[str, ...] = ()
+    soda_labels: tuple[str, ...] = ()
+    updated_at_utc: datetime | None = None
+
+    @property
+    def source_value(self) -> str:
+        return f"location:{self.id}"
+
+    @property
+    def soda_count(self) -> int:
+        return len(self.soda_ids)
+
+    @property
+    def updated_label(self) -> str:
+        if self.updated_at_utc is None:
+            return "Recently"
+        return f"{format_calendar_date(self.updated_at_utc)} {format_clock_time(self.updated_at_utc)}"
 
 
 @dataclass(frozen=True)

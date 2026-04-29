@@ -31,6 +31,7 @@ const installBannerTitle = document.getElementById("install-banner-title");
 const installBannerCopy = document.getElementById("install-banner-copy");
 const installBannerAction = document.getElementById("install-banner-action");
 const installBannerDismiss = document.getElementById("install-banner-dismiss");
+const buildStamp = document.body?.dataset.build || "dev";
 const INSTALL_DISMISS_KEY = "soda-picker-install-dismissed-v1";
 
 const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
@@ -38,7 +39,7 @@ document.body.classList.toggle("standalone-app", isStandalone);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js").catch(() => {
+    navigator.serviceWorker.register(`/service-worker.js?v=${encodeURIComponent(buildStamp)}`).catch(() => {
       // Ignore service worker registration failures and keep the app usable.
     });
   });

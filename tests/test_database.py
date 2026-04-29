@@ -106,12 +106,14 @@ class DatabaseTests(unittest.TestCase):
             {
                 "no_soda_before": "11:00",
                 "reminder_enabled": "true",
+                "caffeine_restrictions_enabled": "false",
                 "allow_diet_sodas": "false",
             }
         )
         overrides = self.database.get_setting_overrides(self.user.id)
         self.assertEqual(overrides["no_soda_before"], "11:00")
         self.assertEqual(overrides["reminder_enabled"], "true")
+        self.assertEqual(overrides["caffeine_restrictions_enabled"], "false")
         self.assertEqual(overrides["allow_diet_sodas"], "false")
         self.assertEqual(self.database.get_setting_overrides(self.other_user.id), {})
 
@@ -149,6 +151,34 @@ class DatabaseTests(unittest.TestCase):
         self.database.clear_taste_training(self.user.id)
         self.assertEqual(self.database.get_taste_training(self.user.id), {})
         self.assertNotEqual(self.database.get_taste_training(self.other_user.id), {})
+
+    def test_fountain_locations_are_user_specific(self) -> None:
+        created = self.database.create_fountain_location(
+            self.user.id,
+            name="Chipotle fountain",
+            preset_key="coke-fountain",
+            soda_ids=("cola", "sprite"),
+        )
+
+        self.assertEqual(created.name, "Chipotle fountain")
+        self.assertEqual(created.preset_key, "coke-fountain")
+        self.assertEqual(created.soda_ids, ("cola", "sprite"))
+        self.assertEqual(self.database.list_fountain_locations(self.other_user.id), [])
+
+        updated = self.database.update_fountain_location(
+            self.user.id,
+            created.id,
+            name="Chipotle fountain east",
+            preset_key="",
+            soda_ids=("sprite",),
+        )
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.name, "Chipotle fountain east")
+        self.assertEqual(updated.preset_key, "")
+        self.assertEqual(updated.soda_ids, ("sprite",))
+
+        self.assertTrue(self.database.delete_fountain_location(self.user.id, created.id))
+        self.assertEqual(self.database.list_fountain_locations(self.user.id), [])
 
     def test_recommendation_history_tracks_logged_state(self) -> None:
         soda = Soda(id="cola-1", name="Cola", brand="Example", caffeine_mg=38)
